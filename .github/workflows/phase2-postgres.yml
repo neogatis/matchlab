@@ -1,0 +1,81 @@
+name: phase2-postgres
+
+on:
+  push:
+    branches: [phase2-postgres]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/db/**"
+      - "alembic/**"
+      - "scripts/import_v7_sqlite_to_postgres.py"
+      - "scripts/verify_phase2_schema.py"
+      - "tests/test_postgres_migration.py"
+      - "requirements-postgres.txt"
+      - ".github/workflows/phase2-postgres.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL dependencies
+        run: pip install -r requirements-postgres.txt
+
+      - name: Generate frozen initial migration if absent
+        id: migration
+        shell: bash
+        run: |
+          if find alembic/versions -maxdepth 1 -type f -name '*.py' | grep -q .; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            alembic revision --autogenerate -m "initial postgres schema"
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upgrade empty PostgreSQL to head
+        run: alembic upgrade head
+
+      - name: Verify schema and indexes
+        run: python scripts/verify_phase2_schema.py
+
+      - name: Rehearse v7 SQLite -> PostgreSQL migration
+        run: python -m unittest tests.test_postgres_migration -v
+
+      - name: Verify Alembic has no model drift
+        run: alembic check
+
+      - name: Commit generated initial migration
+        if: github.event_name == 'push' && steps.migration.outputs.generated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add alembic/versions/*.py
+          git commit -m "Phase 2: freeze initial PostgreSQL migration"
+          git push
