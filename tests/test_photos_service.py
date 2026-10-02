@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -262,6 +263,20 @@ class PhotoServiceTests(unittest.TestCase):
             self.assertEqual(result["done"],1)
             self.assertIn(key,self.storage.deleted)
             self.assertEqual(queued.status,"DONE")
+
+    def test_database_rejects_invalid_photo_metadata(self):
+        with Session(self.engine) as db:
+            db.add(Photo(
+                user_id=self.user_id,
+                storage_key="users/1/bad.jpg",
+                mime="image/jpeg",
+                byte_size=-1,
+                sort_order=-1,
+                moderation_status="VISIBLE",
+            ))
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
 
     def test_photo_progress_reports_minimum_and_recommendation(self):
         with Session(self.engine) as db:
