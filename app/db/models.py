@@ -536,6 +536,83 @@ class MarketingAttribution(Base):
     referral_input: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
 
 
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(24), nullable=False)
+    provider_subscription_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PRODUCTION")
+    auto_renew: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subscription_id", name="uq_subscriptions_provider_external"),
+        CheckConstraint("provider IN ('APPLE','GOOGLE','WEB','MANUAL')", name="ck_subscriptions_provider"),
+        CheckConstraint("tier IN ('PREMIUM','PREMIUM_PLUS')", name="ck_subscriptions_tier"),
+        CheckConstraint("status IN ('ACTIVE','GRACE','BILLING_RETRY','EXPIRED','REVOKED')", name="ck_subscriptions_status"),
+        CheckConstraint("environment IN ('PRODUCTION','SANDBOX')", name="ck_subscriptions_environment"),
+        CheckConstraint(
+            "current_period_start IS NULL OR current_period_end IS NULL OR current_period_start <= current_period_end",
+            name="ck_subscriptions_period_order",
+        ),
+        Index("ix_subscriptions_user_status_end", "user_id", "status", "current_period_end"),
+    )
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(24), nullable=False)
+    provider_transaction_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    purchase_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    amount_minor: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str | None] = mapped_column(String(3))
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PRODUCTION")
+    purchased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_transaction_id", name="uq_payments_provider_transaction"),
+        CheckConstraint("provider IN ('APPLE','GOOGLE','WEB','MANUAL')", name="ck_payments_provider"),
+        CheckConstraint("purchase_kind IN ('SUBSCRIPTION','ONE_TIME')", name="ck_payments_kind"),
+        CheckConstraint("status IN ('PURCHASED','PENDING','REFUNDED','REVOKED')", name="ck_payments_status"),
+        CheckConstraint("environment IN ('PRODUCTION','SANDBOX')", name="ck_payments_environment"),
+        CheckConstraint("amount_minor IS NULL OR amount_minor >= 0", name="ck_payments_amount_nonnegative"),
+        CheckConstraint("currency IS NULL OR char_length(currency) = 3", name="ck_payments_currency"),
+        Index("ix_payments_user_purchased", "user_id", "purchased_at"),
+    )
+
+
+class UserEntitlement(Base):
+    __tablename__ = "user_entitlements"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    entitlement_key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    scope_key: Mapped[str] = mapped_column(String(160), primary_key=True, server_default="")
+    source_payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id", ondelete="SET NULL"))
+    source_subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id", ondelete="SET NULL"))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_user_entitlements_active", "user_id", "entitlement_key", "expires_at", "revoked_at"),
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
