@@ -20,3 +20,5 @@ from .service import (
     settings_overview,
 )
 from .mutations import bootstrap_first_superadmin, set_console_role, set_setting
+from .controller import load_section
+from .panel import render_console_page
