@@ -191,14 +191,13 @@ def send_message(
             now=now,
         )
 
-    db.add(
-        Notification(
-            user_id=recipient_id,
-            kind="MESSAGE",
-            text="У вас новое сообщение в MatchLab.",
-            created_at=now,
-        )
+    notification = Notification(
+        user_id=recipient_id,
+        kind="MESSAGE",
+        text="У вас новое сообщение в MatchLab.",
+        created_at=now,
     )
+    db.add(notification)
     db.add(
         ProductEvent(
             user_id=sender_id,
@@ -211,6 +210,10 @@ def send_message(
         )
     )
     db.flush()
+
+    from app.push.service import enqueue_notification
+
+    enqueue_notification(db, notification_id=notification.id, now=now)
     return message
 
 
