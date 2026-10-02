@@ -19,4 +19,4 @@ from .service import (
     questionnaire_overview,
     settings_overview,
 )
-from .mutations import set_console_role, set_setting
+from .mutations import bootstrap_first_superadmin, set_console_role, set_setting
