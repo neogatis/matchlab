@@ -259,4 +259,6 @@ def is_matchable(profile: Profile | None, market: Market | None, today: date | N
         return False
     if not profile.partner_preferences_completed:
         return False
+    if not profile.photos_completed:
+        return False
     return True

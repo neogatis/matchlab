@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -189,6 +190,7 @@ class Profile(Base):
     children_plans: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
     questionnaire_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     partner_preferences_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    photos_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     status_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -288,6 +290,25 @@ class LegacyPartnerCriteria(Base):
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class PhotoUploadTicket(Base):
+    __tablename__ = "photo_upload_tickets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PREPARED")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('PREPARED','CONSUMED','CANCELLED','EXPIRED')", name="ck_photo_upload_tickets_status"),
+        Index("ix_photo_upload_tickets_user_status", "user_id", "status"),
+    )
+
+
 class Photo(Base):
     __tablename__ = "photos"
 
@@ -295,12 +316,40 @@ class Photo(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     storage_key: Mapped[str | None] = mapped_column(Text, unique=True)
     mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    byte_size: Mapped[int | None] = mapped_column(BigInteger)
+    object_etag: Mapped[str | None] = mapped_column(String(160))
     is_main: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     moderation_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="PENDING")
+    moderation_reason: Mapped[str | None] = mapped_column(String(255))
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    __table_args__ = (Index("ix_photos_user_status", "user_id", "moderation_status"),)
+    __table_args__ = (
+        Index("ix_photos_user_status", "user_id", "moderation_status"),
+        Index("uq_photos_one_main_per_user", "user_id", unique=True, postgresql_where=text("is_main")),
+        CheckConstraint("moderation_status IN ('PENDING','APPROVED','REJECTED')", name="ck_photos_moderation_status"),
+        CheckConstraint("byte_size IS NULL OR byte_size > 0", name="ck_photos_positive_size"),
+        CheckConstraint("sort_order >= 0", name="ck_photos_sort_order_nonnegative"),
+    )
+
+
+class PhotoObjectDeletion(Base):
+    __tablename__ = "photo_object_deletions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING','DONE','FAILED')", name="ck_photo_object_deletions_status"),
+        CheckConstraint("attempts >= 0", name="ck_photo_object_deletions_attempts_nonnegative"),
+        Index("ix_photo_object_deletions_status", "status", "created_at"),
+    )
 
 
 class LegacyPhotoBlob(Base):
