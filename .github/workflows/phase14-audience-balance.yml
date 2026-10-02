@@ -1,0 +1,54 @@
+name: phase14-audience-balance
+
+on:
+  push:
+    branches: [phase14-audience-balance]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/balance/**"
+      - "app/console/**"
+      - "tests/test_balance_service.py"
+      - ".github/workflows/phase14-audience-balance.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-auth.txt
+
+      - name: Upgrade database
+        run: alembic upgrade head
+
+      - name: Verify no schema drift
+        run: alembic check
+
+      - name: Run audience balance tests
+        run: python -m unittest tests.test_balance_service -v
+
+      - name: Run console regression
+        run: python -m unittest tests.test_console_service -v
