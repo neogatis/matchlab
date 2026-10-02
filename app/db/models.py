@@ -632,7 +632,7 @@ class PushDevice(Base):
     provider: Mapped[str] = mapped_column(String(16), nullable=False)
     platform: Mapped[str] = mapped_column(String(16), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    token_ref: Mapped[str] = mapped_column(String(255), nullable=False)
     locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ru-KZ")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
