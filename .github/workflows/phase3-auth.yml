@@ -1,0 +1,95 @@
+name: phase3-auth
+
+on:
+  push:
+    branches: [phase3-auth]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/auth/**"
+      - "app/db/**"
+      - "alembic/**"
+      - "tests/test_auth_service.py"
+      - "scripts/import_v7_sqlite_to_postgres.py"
+      - "scripts/compare_v7_sqlite_postgres.py"
+      - "requirements-auth.txt"
+      - ".github/workflows/phase3-auth.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  auth:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install auth dependencies
+        run: pip install -r requirements-auth.txt
+
+      - name: Upgrade committed migrations
+        run: alembic upgrade head
+
+      - name: Generate Phase 3 migration when models changed
+        id: migration
+        shell: bash
+        run: |
+          set +e
+          alembic check >/tmp/alembic-check.txt 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            cat /tmp/alembic-check.txt
+            alembic revision --autogenerate -m "phase3 auth security"
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply Phase 3 schema
+        run: alembic upgrade head
+
+      - name: Run auth service tests
+        run: python -m unittest tests.test_auth_service -v
+
+      - name: Rehearse v7 import with secure legacy-session conversion
+        run: python -m unittest tests.test_postgres_migration -v
+
+      - name: Verify no schema drift
+        run: alembic check
+
+      - name: Verify full rollback and re-upgrade
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Commit generated Phase 3 migration
+        if: github.event_name == 'push' && steps.migration.outputs.generated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add alembic/versions/*.py
+          git commit -m "Phase 3: freeze auth security migration"
+          git push
