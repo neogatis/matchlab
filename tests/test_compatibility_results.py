@@ -88,6 +88,7 @@ class CompatibilityResultTests(unittest.TestCase):
             lifestyle="ACTIVE",
             questionnaire_completed=True,
             partner_preferences_completed=True,
+            photos_completed=True,
             profile_completed=True,
             updated_at=self.now,
         )
