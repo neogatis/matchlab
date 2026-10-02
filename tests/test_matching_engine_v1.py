@@ -3,6 +3,7 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -118,6 +119,28 @@ class MatchingEngineTests(unittest.TestCase):
         )
         db.add(row); db.flush()
         return row
+
+    def test_database_rejects_invalid_coordinates_and_children_status(self):
+        with Session(self.engine) as db:
+            bad=Market(
+                code="BAD",country_code="KZ",city_code="BAD",display_name="Bad",
+                timezone="Asia/Almaty",currency_code="KZT",default_language="ru-KZ",
+                latitude=100,longitude=0,supported_languages=["ru-KZ"],
+                registration_open=True,matching_open=True,
+            )
+            db.add(bad)
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
+
+        with Session(self.engine) as db:
+            user=User(email="badchild@example.com",password_hash="x",referral_code="badchild")
+            db.add(user); db.flush()
+            p=Profile(user_id=user.id,display_name="Bad",children_status="UNKNOWN")
+            db.add(p)
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
 
     def test_category_mapping_covers_every_v7_section_once(self):
         all_sections=[section for sections in CATEGORY_SECTIONS.values() for section in sections]
