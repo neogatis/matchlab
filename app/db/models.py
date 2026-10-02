@@ -132,6 +132,29 @@ class AuthOutbox(Base):
     )
 
 
+class Market(Base):
+    __tablename__ = "markets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    city_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(80), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    default_language: Mapped[str] = mapped_column(String(16), nullable=False)
+    supported_languages: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    registration_open: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    matching_open: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("country_code", "city_code", name="uq_markets_country_city"),
+        Index("ix_markets_active", "registration_open", "matching_open"),
+    )
+
+
 class Profile(Base):
     __tablename__ = "profiles"
 
@@ -142,6 +165,8 @@ class Profile(Base):
     seek_gender: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
     city: Mapped[str] = mapped_column(String(120), nullable=False, server_default="")
     country_code: Mapped[str] = mapped_column(String(2), nullable=False, server_default="KZ")
+    market_id: Mapped[int | None] = mapped_column(ForeignKey("markets.id", name="fk_profiles_market_id", ondelete="SET NULL"), index=True)
+    preferred_locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ru-KZ")
     relationship_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="PAUSED")
     eligibility_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="NOT_ACTIVE_FOR_MATCHING")
     dating_goal: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
@@ -165,7 +190,9 @@ class Profile(Base):
     __table_args__ = (
         CheckConstraint("readiness_score BETWEEN 0 AND 100", name="ck_profiles_readiness_0_100"),
         CheckConstraint("height IS NULL OR height BETWEEN 100 AND 250", name="ck_profiles_height"),
-        Index("ix_profiles_matchable", "eligibility_status", "relationship_status", "gender", "seek_gender", "city"),
+        CheckConstraint("relationship_status IN ('ACTIVE_SEARCH','OPEN_TO_MATCH','PAUSED','IN_RELATIONSHIP','NOT_ACTIVE')", name="ck_profiles_relationship_status"),
+        CheckConstraint("eligibility_status IN ('ACTIVE_FOR_MATCHING','NOT_ACTIVE_FOR_MATCHING')", name="ck_profiles_eligibility_status"),
+        Index("ix_profiles_matchable", "eligibility_status", "relationship_status", "gender", "seek_gender", "market_id"),
     )
 
 
