@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.events import EVENT_PROFILE_COMPLETED, track_once
 from app.db.models import Market, Profile, User, UserStatusHistory
 
 
@@ -242,6 +243,45 @@ def confirm_status(
     profile.updated_at = now
     db.flush()
     return profile
+
+
+
+def recompute_profile_completion(
+    db: Session,
+    *,
+    user_id: int,
+    now: datetime | None = None,
+) -> bool:
+    now = now or utcnow()
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise ProfileError("Profile not found")
+
+    basic_complete = bool(
+        (profile.display_name or "").strip()
+        and profile.dob is not None
+        and profile.gender in GENDERS
+        and profile.seek_gender in SEEK_GENDERS
+        and profile.market_id is not None
+    )
+    complete = bool(
+        basic_complete
+        and profile.questionnaire_completed
+        and profile.partner_preferences_completed
+        and profile.photos_completed
+    )
+    profile.profile_completed = complete
+    profile.updated_at = now
+    if complete:
+        track_once(
+            db,
+            event_type=EVENT_PROFILE_COMPLETED,
+            user_id=user_id,
+            metadata={"completion_model": "profile-v1"},
+            now=now,
+        )
+    db.flush()
+    return complete
 
 
 def is_matchable(profile: Profile | None, market: Market | None, today: date | None = None) -> bool:
