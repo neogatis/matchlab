@@ -20,6 +20,7 @@ from app.db.models import (
     QuestionnaireQuestion,
     QuestionnaireVersion,
     Session as DbSession,
+    User,
 )
 from app.profile.service import is_matchable, user_age
 from .config import ALGORITHM_VERSION, CATEGORY_SECTIONS, FINAL_WEIGHTS, SOFT_IMPORTANCE_WEIGHT
@@ -194,6 +195,11 @@ def _hard_filter_direction(
 def mutual_hard_pass(db: Session, user_a: int, user_b: int) -> tuple[bool, str | None]:
     if user_a == user_b:
         return False, "same_user"
+    ua, ub = db.get(User, user_a), db.get(User, user_b)
+    if ua is None or ua.status != "ACTIVE":
+        return False, "source_user_inactive"
+    if ub is None or ub.status != "ACTIVE":
+        return False, "target_user_inactive"
     pa, pb = db.get(Profile, user_a), db.get(Profile, user_b)
     ma, mb = _market(db, pa), _market(db, pb)
     if not is_matchable(pa, ma):
@@ -485,9 +491,11 @@ def rank_candidates(
 
     query = (
         select(Profile.user_id)
+        .join(User, User.id == Profile.user_id)
         .join(Market, Market.id == Profile.market_id)
         .where(
             Profile.user_id != user_id,
+            User.status == "ACTIVE",
             Profile.profile_completed.is_(True),
             Profile.questionnaire_completed.is_(True),
             Profile.partner_preferences_completed.is_(True),

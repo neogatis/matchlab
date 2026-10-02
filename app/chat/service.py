@@ -14,6 +14,7 @@ from app.db.models import (
     Notification,
     ProductEvent,
     Profile,
+    User,
 )
 
 
@@ -135,6 +136,12 @@ def send_message(
         user_id=sender_id,
     )
     recipient_id = _other_user(match, sender_id)
+    sender = db.get(User, sender_id)
+    recipient = db.get(User, recipient_id)
+    if sender is None or sender.status != "ACTIVE":
+        raise ChatUnavailable("sender_inactive")
+    if recipient is None or recipient.status != "ACTIVE":
+        raise ChatUnavailable("recipient_inactive")
 
     if _blocked(db, sender_id, recipient_id):
         raise ChatUnavailable("blocked")

@@ -42,6 +42,7 @@ class User(Base):
 
     __table_args__ = (
         CheckConstraint("invites_sent >= 0", name="ck_users_invites_nonnegative"),
+        CheckConstraint("status IN ('ACTIVE','SOFT_BANNED','BANNED','DELETION_REQUESTED')", name="ck_users_status"),
         UniqueConstraint("phone_e164", name="uq_users_phone_e164"),
         Index("ix_users_email_lower", func.lower(email), unique=True),
     )
@@ -471,6 +472,12 @@ class Report(Base):
     reason: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('OPEN','IN_REVIEW','RESOLVED','DISMISSED')", name="ck_reports_status"),
+        CheckConstraint("((target_user IS NOT NULL)::int + (photo_id IS NOT NULL)::int + (message_id IS NOT NULL)::int) = 1", name="ck_reports_one_target"),
+        Index("ix_reports_status_created", "status", "created_at"),
+    )
 
 
 class ModerationAction(Base):

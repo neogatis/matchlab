@@ -184,7 +184,7 @@ def authenticate_password(
         )
 
     user = db.execute(select(User).where(User.email == normalized)).scalar_one_or_none()
-    if not user or user.status != "ACTIVE":
+    if not user or user.status not in {"ACTIVE", "SOFT_BANNED"}:
         raise InvalidCredentials("Invalid email or password")
 
     ok, needs_upgrade = verify_password(password, user.password_hash)
