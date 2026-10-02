@@ -475,6 +475,7 @@ class Report(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('OPEN','IN_REVIEW','RESOLVED','DISMISSED')", name="ck_reports_status"),
+        CheckConstraint("((target_user IS NOT NULL)::int + (photo_id IS NOT NULL)::int + (message_id IS NOT NULL)::int) = 1", name="ck_reports_one_target"),
         Index("ix_reports_status_created", "status", "created_at"),
     )
 
