@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import AdminAccount, AuditLog, Setting, User
@@ -87,6 +88,43 @@ def set_console_role(
             target_type="ADMIN_ACCOUNT",
             target_id=str(target_user_id),
             metadata_json={"role": role, "active": bool(active)},
+            created_at=now,
+        )
+    )
+    db.flush()
+    return row
+
+
+def bootstrap_first_superadmin(
+    db: Session,
+    *,
+    target_user_id: int,
+    now: datetime | None = None,
+) -> AdminAccount:
+    now = now or utcnow()
+    existing_count = int(db.scalar(select(func.count()).select_from(AdminAccount)) or 0)
+    if existing_count != 0:
+        raise InvalidConsoleAction("console_already_bootstrapped")
+    user = db.get(User, target_user_id)
+    if user is None or user.status != "ACTIVE":
+        raise InvalidConsoleAction("target_user_not_active")
+    row = AdminAccount(
+        user_id=target_user_id,
+        role="SUPERADMIN",
+        is_active=True,
+        created_by_user_id=None,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.add(
+        AuditLog(
+            actor_type="SYSTEM",
+            actor_id=None,
+            action="CONSOLE_BOOTSTRAP",
+            target_type="ADMIN_ACCOUNT",
+            target_id=str(target_user_id),
+            metadata_json={"role": "SUPERADMIN"},
             created_at=now,
         )
     )
