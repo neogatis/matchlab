@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from app.analytics.events import EVENT_REGISTRATION, track_once
-from app.db.models import AuthChallenge, AuthRateLimit, Session as DbSession, User
+from app.db.models import AuthChallenge, AuthRateLimit, MarketingAttribution, Session as DbSession, User
 
 
 PASSWORD_HASHER = PasswordHasher(
@@ -104,14 +104,34 @@ def verify_password(password: str, stored: str) -> tuple[bool, bool]:
     return _verify_legacy_pbkdf2(password, stored), True
 
 
-def register_email_user(db: OrmSession, email: str, password: str, referred_by: int | None = None) -> User:
+def register_email_user(
+    db: OrmSession,
+    email: str,
+    password: str,
+    referred_by: int | None = None,
+    referral_code: str | None = None,
+) -> User:
     normalized = normalize_email(email)
     password_hash = hash_password(password)
+
+    resolved_referrer = None
+    referral_input = (referral_code or "").strip()
+    if referral_input:
+        from app.referrals.service import resolve_referral_code
+
+        resolved = resolve_referral_code(db, code=referral_input)
+        if resolved is not None:
+            resolved_referrer = resolved.id
+
+    if referred_by is not None and resolved_referrer is not None and referred_by != resolved_referrer:
+        raise AuthError("Conflicting referral attribution")
+    effective_referrer = resolved_referrer if resolved_referrer is not None else referred_by
+
     user = User(
         email=normalized,
         password_hash=password_hash,
         referral_code=secrets.token_urlsafe(9),
-        referred_by=referred_by,
+        referred_by=effective_referrer,
         password_updated_at=utcnow(),
     )
     db.add(user)
@@ -120,6 +140,24 @@ def register_email_user(db: OrmSession, email: str, password: str, referred_by: 
     except IntegrityError as exc:
         db.rollback()
         raise AuthError("Email already registered") from exc
+
+    db.add(
+        MarketingAttribution(
+            user_id=user.id,
+            referral_input=referral_input[:255],
+        )
+    )
+
+    if effective_referrer is not None:
+        from app.referrals.service import register_referral
+
+        register_referral(
+            db,
+            referrer_user_id=effective_referrer,
+            referred_user_id=user.id,
+            referral_code_used=referral_input or None,
+        )
+
     track_once(
         db,
         event_type=EVENT_REGISTRATION,
