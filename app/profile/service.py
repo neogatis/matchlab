@@ -77,6 +77,8 @@ def ensure_market(
     currency_code: str,
     default_language: str,
     supported_languages: list[str],
+    latitude: float | None = None,
+    longitude: float | None = None,
     registration_open: bool = True,
     matching_open: bool = False,
 ) -> Market:
@@ -90,6 +92,8 @@ def ensure_market(
             timezone=timezone_name,
             currency_code=currency_code.upper(),
             default_language=default_language,
+            latitude=latitude,
+            longitude=longitude,
             supported_languages=supported_languages,
             registration_open=registration_open,
             matching_open=matching_open,
@@ -104,6 +108,8 @@ def ensure_market(
     market.timezone = timezone_name
     market.currency_code = currency_code.upper()
     market.default_language = default_language
+    market.latitude = latitude
+    market.longitude = longitude
     market.supported_languages = supported_languages
     market.registration_open = registration_open
     market.matching_open = matching_open
