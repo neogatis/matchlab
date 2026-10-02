@@ -34,13 +34,14 @@ class User(Base):
     invites_sent: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="ACTIVE")
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    phone_e164: Mapped[str | None] = mapped_column(String(32), unique=True)
+    phone_e164: Mapped[str | None] = mapped_column(String(32))
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("invites_sent >= 0", name="ck_users_invites_nonnegative"),
+        UniqueConstraint("phone_e164", name="uq_users_phone_e164"),
         Index("ix_users_email_lower", func.lower(email), unique=True),
     )
 
