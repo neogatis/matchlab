@@ -183,6 +183,7 @@ class Profile(Base):
     children_attitude: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
     children_plans: Mapped[str] = mapped_column(String(80), nullable=False, server_default="")
     questionnaire_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    partner_preferences_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     status_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -269,6 +270,7 @@ class PartnerPreference(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "criterion_key", name="uq_partner_preferences_user_criterion"),
         CheckConstraint("importance IN ('HARD','IMPORTANT','PREFERENCE','IGNORE')", name="ck_partner_preferences_importance"),
+        CheckConstraint("min_value IS NULL OR max_value IS NULL OR min_value <= max_value", name="ck_partner_preferences_range_order"),
     )
 
 
