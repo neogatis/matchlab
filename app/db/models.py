@@ -153,6 +153,8 @@ class Market(Base):
 
     __table_args__ = (
         UniqueConstraint("country_code", "city_code", name="uq_markets_country_city"),
+        CheckConstraint("latitude IS NULL OR latitude BETWEEN -90 AND 90", name="ck_markets_latitude"),
+        CheckConstraint("longitude IS NULL OR longitude BETWEEN -180 AND 180", name="ck_markets_longitude"),
         Index("ix_markets_active", "registration_open", "matching_open"),
     )
 
@@ -196,6 +198,7 @@ class Profile(Base):
         CheckConstraint("height IS NULL OR height BETWEEN 100 AND 250", name="ck_profiles_height"),
         CheckConstraint("relationship_status IN ('ACTIVE_SEARCH','OPEN_TO_MATCH','PAUSED','IN_RELATIONSHIP','NOT_ACTIVE')", name="ck_profiles_relationship_status"),
         CheckConstraint("eligibility_status IN ('ACTIVE_FOR_MATCHING','NOT_ACTIVE_FOR_MATCHING')", name="ck_profiles_eligibility_status"),
+        CheckConstraint("children_status IN ('','NO_CHILDREN','HAS_CHILDREN')", name="ck_profiles_children_status"),
         Index("ix_profiles_matchable", "eligibility_status", "relationship_status", "gender", "seek_gender", "market_id"),
     )
 
