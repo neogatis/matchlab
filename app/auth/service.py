@@ -354,3 +354,81 @@ def consume_challenge(
     row.consumed_at = now
     db.flush()
     return row
+
+
+def verify_email_challenge(
+    db: OrmSession,
+    *,
+    email: str,
+    secret: str,
+    now: datetime | None = None,
+) -> User:
+    now = now or utcnow()
+    normalized = normalize_email(email)
+    challenge = consume_challenge(
+        db,
+        purpose="EMAIL_VERIFY",
+        channel="email",
+        target=normalized,
+        secret=secret,
+        now=now,
+    )
+    user = db.get(User, challenge.user_id) if challenge.user_id else None
+    if user is None or user.email != normalized:
+        raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+    user.email_verified_at = now
+    db.flush()
+    return user
+
+
+def verify_phone_challenge(
+    db: OrmSession,
+    *,
+    phone_e164: str,
+    secret: str,
+    now: datetime | None = None,
+) -> User:
+    now = now or utcnow()
+    challenge = consume_challenge(
+        db,
+        purpose="PHONE_VERIFY",
+        channel="phone",
+        target=phone_e164,
+        secret=secret,
+        now=now,
+    )
+    user = db.get(User, challenge.user_id) if challenge.user_id else None
+    if user is None:
+        raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+    user.phone_e164 = phone_e164.strip()
+    user.phone_verified_at = now
+    db.flush()
+    return user
+
+
+def reset_password_with_challenge(
+    db: OrmSession,
+    *,
+    email: str,
+    secret: str,
+    new_password: str,
+    now: datetime | None = None,
+) -> User:
+    now = now or utcnow()
+    normalized = normalize_email(email)
+    challenge = consume_challenge(
+        db,
+        purpose="PASSWORD_RESET",
+        channel="email",
+        target=normalized,
+        secret=secret,
+        now=now,
+    )
+    user = db.get(User, challenge.user_id) if challenge.user_id else None
+    if user is None or user.email != normalized:
+        raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+    user.password_hash = hash_password(new_password)
+    user.password_updated_at = now
+    revoke_all_sessions(db, user.id, now=now)
+    db.flush()
+    return user
