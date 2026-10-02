@@ -11,4 +11,3 @@ from .events import (
     track_event,
     track_once,
 )
-from .service import analytics_overview, users_with_relevant_match
