@@ -257,6 +257,7 @@ def import_database(sqlite_path: str, postgres_url: str):
                 )
             )
 
+        legacy_photo_blobs = []
         for r in rows(source, "photos"):
             session.add(
                 Photo(
@@ -268,7 +269,10 @@ def import_database(sqlite_path: str, postgres_url: str):
                     created_at=parse_dt(r["created_at"]),
                 )
             )
-            session.add(LegacyPhotoBlob(photo_id=r["id"], base64_data=r["data"]))
+            legacy_photo_blobs.append((r["id"], r["data"]))
+        session.flush()
+        for photo_id, base64_data in legacy_photo_blobs:
+            session.add(LegacyPhotoBlob(photo_id=photo_id, base64_data=base64_data))
 
         for r in rows(source, "likes"):
             session.add(
