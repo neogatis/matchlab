@@ -1,0 +1,2 @@
+-r requirements-auth.txt
+boto3==1.40.30
