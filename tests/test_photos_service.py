@@ -56,7 +56,8 @@ class PhotoServiceTests(unittest.TestCase):
     def setUp(self):
         with self.engine.begin() as c:
             c.execute(text(
-                "TRUNCATE TABLE users, markets RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE moderation_actions, photo_object_deletions, "
+                "photo_upload_tickets, photos, users, markets RESTART IDENTITY CASCADE"
             ))
         self.now = datetime.now(timezone.utc)
         self.storage = FakeStorage()
