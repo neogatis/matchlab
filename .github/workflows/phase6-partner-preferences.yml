@@ -1,0 +1,88 @@
+name: phase6-partner-preferences
+
+on:
+  push:
+    branches: [phase6-partner-preferences]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/preferences/**"
+      - "app/db/**"
+      - "alembic/**"
+      - "tests/test_partner_preferences.py"
+      - ".github/workflows/phase6-partner-preferences.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  preferences:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-auth.txt
+
+      - name: Upgrade committed migrations
+        run: alembic upgrade head
+
+      - name: Generate Phase 6 migration when needed
+        id: migration
+        shell: bash
+        run: |
+          set +e
+          alembic check >/tmp/alembic-check.txt 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            cat /tmp/alembic-check.txt
+            alembic revision --autogenerate -m "phase6 partner preferences"
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply Phase 6 schema
+        run: alembic upgrade head
+
+      - name: Run partner preference tests
+        run: python -m unittest tests.test_partner_preferences -v
+
+      - name: Verify no schema drift
+        run: alembic check
+
+      - name: Verify full rollback and re-upgrade
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Commit generated migration
+        if: github.event_name == 'push' && steps.migration.outputs.generated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add alembic/versions/*.py
+          git commit -m "Phase 6: freeze partner preferences migration"
+          git push
