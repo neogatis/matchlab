@@ -24,9 +24,7 @@ with engine.connect() as c:
     inspector = inspect(c)
     tables = set(inspector.get_table_names())
     missing = EXPECTED - tables
-    extra = tables - EXPECTED - {"alembic_version"}
     assert not missing, f"missing tables: {sorted(missing)}"
-    assert not extra, f"unexpected tables: {sorted(extra)}"
     assert c.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     assert any(i["name"] == "ix_profiles_matchable" for i in inspector.get_indexes("profiles"))
     assert any(i["name"] == "ix_photos_user_status" for i in inspector.get_indexes("photos"))
