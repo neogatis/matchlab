@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.analytics.events import EVENT_QUESTIONNAIRE_COMPLETED, EVENT_QUESTIONNAIRE_STARTED, track_once
 from app.db.models import (
     Profile,
     QuestionnaireAnswer,
@@ -227,7 +228,20 @@ def save_answer(
     answer.value_text = value_text
     answer.value_json = value_json
     db.flush()
-    recompute_completion(db, user_id=user_id, version_id=version.id)
+    track_once(
+        db,
+        event_type=EVENT_QUESTIONNAIRE_STARTED,
+        user_id=user_id,
+        metadata={"questionnaire_version": version.code},
+    )
+    completed = recompute_completion(db, user_id=user_id, version_id=version.id)
+    if completed:
+        track_once(
+            db,
+            event_type=EVENT_QUESTIONNAIRE_COMPLETED,
+            user_id=user_id,
+            metadata={"questionnaire_version": version.code},
+        )
     return answer
 
 
