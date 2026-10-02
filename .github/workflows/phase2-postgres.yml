@@ -71,6 +71,12 @@ jobs:
       - name: Verify Alembic has no model drift
         run: alembic check
 
+      - name: Verify downgrade and clean re-upgrade
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          python scripts/verify_phase2_schema.py
+
       - name: Commit generated initial migration
         if: github.event_name == 'push' && steps.migration.outputs.generated == 'true'
         run: |
