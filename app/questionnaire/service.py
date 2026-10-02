@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.events import EVENT_QUESTIONNAIRE_COMPLETED, EVENT_QUESTIONNAIRE_STARTED, track_once
+from app.profile.service import recompute_profile_completion
 from app.db.models import (
     Profile,
     QuestionnaireAnswer,
@@ -326,4 +327,5 @@ def recompute_completion(db: Session, *, user_id: int, version_id: int | None = 
         raise QuestionnaireError("Profile not found")
     profile.questionnaire_completed = bool(state["complete"])
     db.flush()
+    recompute_profile_completion(db, user_id=user_id)
     return profile.questionnaire_completed
