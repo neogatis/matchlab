@@ -1,0 +1,51 @@
+name: phase19-push
+
+on:
+  push:
+    branches: [phase19-push]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/push/**"
+      - "app/interests/**"
+      - "app/chat/**"
+      - "app/db/**"
+      - "alembic/**"
+      - "tests/test_push_service.py"
+      - ".github/workflows/phase19-push.yml"
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-auth.txt
+      - run: alembic upgrade head
+      - run: alembic check
+      - run: python -m unittest tests.test_push_service -v
+      - run: python -m unittest tests.test_interest_service -v
+      - run: python -m unittest tests.test_chat_service -v
+      - run: |
+          alembic downgrade base
+          alembic upgrade head
