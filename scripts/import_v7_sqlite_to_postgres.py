@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 import sqlite3
 import sys
-import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -18,6 +16,7 @@ from sqlalchemy.orm import Session
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from app.questionnaire.catalog_v7 import V7_QUESTIONS, V7_SCALE_OPTIONS, V7_VERSION_CODE, V7_VERSION_TITLE  # noqa: E402
 from app.db.models import (  # noqa: E402
     Block,
     Conversation,
@@ -70,24 +69,6 @@ def json_value(value, default):
         return json.loads(value) if value not in (None, "") else default
     except Exception:
         return default
-
-
-def load_questionnaire():
-    with tempfile.TemporaryDirectory(prefix="matchlab-v7-questionnaire-") as tmp:
-        old_dir = os.environ.get("MATCH_DATA_DIR")
-        os.environ["MATCH_DATA_DIR"] = tmp
-        spec = importlib.util.spec_from_file_location(
-            "matchlab_v7_questionnaire",
-            ROOT / "app" / "legacy" / "matchlab_v7.py",
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        result = list(module.QUESTIONS)
-        if old_dir is None:
-            os.environ.pop("MATCH_DATA_DIR", None)
-        else:
-            os.environ["MATCH_DATA_DIR"] = old_dir
-        return result
 
 
 IMPORTANCE = {
@@ -231,28 +212,30 @@ def import_database(sqlite_path: str, postgres_url: str):
                     add_preference(session, r["user_id"], key, spec)
 
         qversion = QuestionnaireVersion(
-            code="v7-64",
-            title="MatchLab v7 questionnaire — 64 questions",
+            code=V7_VERSION_CODE,
+            title=V7_VERSION_TITLE,
             is_active=True,
         )
         session.add(qversion)
         session.flush()
 
         qmap = {}
-        for pos, q in enumerate(load_questionnaire(), start=1):
+        for pos, (legacy_qid, category, question_text) in enumerate(V7_QUESTIONS, start=1):
             item = QuestionnaireQuestion(
                 version_id=qversion.id,
-                legacy_qid=q["id"],
-                category=q["section"],
-                question_text=q["text"],
+                legacy_qid=legacy_qid,
+                category=category,
+                question_text=question_text,
                 answer_type="scale",
+                is_required=True,
+                options_json=V7_SCALE_OPTIONS,
                 weight=1,
                 match_logic={"scale_min": 1, "scale_max": 5, "legacy_formula": "100-25*abs(a-b)"},
                 position=pos,
             )
             session.add(item)
             session.flush()
-            qmap[q["id"]] = item.id
+            qmap[legacy_qid] = item.id
 
         for r in rows(source, "answers"):
             session.add(
