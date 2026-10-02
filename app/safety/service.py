@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     AuditLog,
     Block,
+    Conversation,
     DataRequest,
+    Match,
     Message,
     ModerationAction,
     Photo,
@@ -112,6 +114,10 @@ def report_message(db: Session, *, reporter: int, message_id: int, reason: str, 
         raise InvalidReport("message_not_found")
     if message.sender == reporter:
         raise InvalidReport("cannot_report_own_message")
+    conversation = db.get(Conversation, message.conversation_id)
+    match = db.get(Match, conversation.match_id) if conversation else None
+    if match is None or reporter not in {match.user1, match.user2}:
+        raise InvalidReport("not_message_participant")
     row = Report(reporter=reporter, message_id=message_id, reason=_validate_reason(reason), status="OPEN", created_at=now)
     db.add(row)
     db.flush()
