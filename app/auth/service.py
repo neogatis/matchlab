@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
+from app.analytics.events import EVENT_REGISTRATION, track_once
 from app.db.models import AuthChallenge, AuthRateLimit, Session as DbSession, User
 
 
@@ -119,6 +120,12 @@ def register_email_user(db: OrmSession, email: str, password: str, referred_by: 
     except IntegrityError as exc:
         db.rollback()
         raise AuthError("Email already registered") from exc
+    track_once(
+        db,
+        event_type=EVENT_REGISTRATION,
+        user_id=user.id,
+        metadata={"channel": "email"},
+    )
     return user
 
 

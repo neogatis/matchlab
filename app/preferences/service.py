@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.profile.service import recompute_profile_completion
 from app.db.models import Market, PartnerPreference, Profile
 from .catalog import CORE_PREFERENCE_KEYS, PREFERENCE_CATALOG, PREFERENCE_IMPORTANCE
 
@@ -218,6 +219,7 @@ def recompute_completion(db: Session, *, user_id: int) -> bool:
     profile.partner_preferences_completed = bool(state["complete"])
     profile.updated_at = utcnow()
     db.flush()
+    recompute_profile_completion(db, user_id=user_id)
     return profile.partner_preferences_completed
 
 

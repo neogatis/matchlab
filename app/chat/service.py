@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.analytics.events import EVENT_CHAT_STARTED, track_once
 from app.db.models import (
     Block,
     Conversation,
@@ -169,6 +170,26 @@ def send_message(
     )
     db.add(message)
     db.flush()
+
+    message_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.conversation_id == conversation.id)
+        )
+        or 0
+    )
+    if message_count == 1:
+        track_once(
+            db,
+            event_type=EVENT_CHAT_STARTED,
+            user_id=sender_id,
+            metadata={
+                "conversation_id": conversation.id,
+                "match_id": match.id,
+            },
+            now=now,
+        )
 
     db.add(
         Notification(

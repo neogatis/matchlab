@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.analytics.service import analytics_overview
 from app.balance import build_balance_report
 from .service import (
     CONSOLE_SECTIONS,
@@ -51,12 +52,7 @@ def load_section(
     if section == "Marketing":
         return marketing_overview(db, console_user_id=console_user_id)
     if section == "Analytics":
-        data = dashboard(db, console_user_id=console_user_id)
-        return {
-            "metrics": data["metrics"],
-            "photos_pending": data["photos_pending"],
-            "reports_open": data["reports_open"],
-        }
+        return analytics_overview(db)
     if section == "Audience balance":
         return build_balance_report(db)
     raise ValueError("unknown_console_section")

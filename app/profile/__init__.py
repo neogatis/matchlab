@@ -9,6 +9,7 @@ from .service import (
     set_relationship_state,
     set_readiness,
     confirm_status,
+    recompute_profile_completion,
     is_matchable,
     ensure_market,
 )
