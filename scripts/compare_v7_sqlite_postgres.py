@@ -88,12 +88,20 @@ def compare_database(sqlite_path: str, postgres_url: str):
             ),
         )
 
-        assert_equal(
-            report,
-            "sessions",
-            canonical(sqlite_rows(sc, "SELECT token,user_id,created_at FROM sessions ORDER BY token"), ["token","user_id","created_at"]),
-            canonical(pg_rows(pc, "SELECT token,user_id,created_at FROM sessions ORDER BY token"), ["token","user_id","created_at"]),
+        source_sessions = []
+        for r in sqlite_rows(sc, "SELECT token,user_id,created_at FROM sessions ORDER BY token"):
+            h = hashlib.sha256(r["token"].encode("utf-8")).hexdigest()
+            source_sessions.append({
+                "selector": "legacy:" + h[:32],
+                "secret_hash": h,
+                "user_id": r["user_id"],
+                "created_at": norm(datetime.fromisoformat(r["created_at"].replace("Z","+00:00"))) if r["created_at"] else None,
+            })
+        target_sessions = canonical(
+            pg_rows(pc, "SELECT token AS selector,secret_hash,user_id,created_at FROM sessions ORDER BY token"),
+            ["selector","secret_hash","user_id","created_at"],
         )
+        assert_equal(report, "sessions_hashed", source_sessions, target_sessions)
 
         profile_fields = [
             "user_id","display_name","dob","gender","seek_gender","city","relationship_status",
