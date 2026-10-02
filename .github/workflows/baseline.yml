@@ -1,0 +1,35 @@
+name: baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Materialize exact v7 source
+        run: python scripts/reconstruct_baseline.py
+      - name: Verify exact source
+        run: python scripts/verify_baseline.py
+      - name: Run baseline tests
+        run: python -m unittest discover -s tests -v
+      - name: Commit materialized source
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        run: |
+          if git diff --quiet -- app/legacy/matchlab_v7.py && git ls-files --error-unmatch app/legacy/matchlab_v7.py >/dev/null 2>&1; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/legacy/matchlab_v7.py
+          git commit -m "Materialize exact MatchLab v7 production baseline"
+          git push
