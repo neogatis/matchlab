@@ -15,4 +15,7 @@ from .service import (
     revoke_all_sessions,
     revoke_session,
     verify_password,
+    verify_email_challenge,
+    verify_phone_challenge,
+    reset_password_with_challenge,
 )
