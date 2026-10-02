@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.balance import build_balance_report
 from .service import (
     CONSOLE_SECTIONS,
     chat_metadata,
@@ -57,17 +58,5 @@ def load_section(
             "reports_open": data["reports_open"],
         }
     if section == "Audience balance":
-        data = dashboard(db, console_user_id=console_user_id)
-        return {
-            "age_distribution": data["age_distribution"],
-            "cities": data["cities"],
-            "metrics": {
-                "MEN": data["metrics"]["MEN"],
-                "WOMEN": data["metrics"]["WOMEN"],
-                "ACTIVE_SEARCH": data["metrics"]["ACTIVE_SEARCH"],
-                "OPEN_TO_MATCH": data["metrics"]["OPEN_TO_MATCH"],
-                "PAUSED": data["metrics"]["PAUSED"],
-                "IN_RELATIONSHIP": data["metrics"]["IN_RELATIONSHIP"],
-            },
-        }
+        return build_balance_report(db)
     raise ValueError("unknown_console_section")
