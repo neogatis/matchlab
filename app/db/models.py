@@ -42,6 +42,7 @@ class User(Base):
 
     __table_args__ = (
         CheckConstraint("invites_sent >= 0", name="ck_users_invites_nonnegative"),
+        CheckConstraint("status IN ('ACTIVE','SOFT_BANNED','BANNED','DELETION_REQUESTED')", name="ck_users_status"),
         UniqueConstraint("phone_e164", name="uq_users_phone_e164"),
         Index("ix_users_email_lower", func.lower(email), unique=True),
     )
