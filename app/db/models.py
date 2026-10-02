@@ -425,8 +425,16 @@ class Message(Base):
     legacy_match_id: Mapped[int | None] = mapped_column(BigInteger)
     sender: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    client_message_id: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "sender", "client_message_id", name="uq_messages_client_id"),
+        CheckConstraint("char_length(btrim(body)) BETWEEN 1 AND 4000", name="ck_messages_body_length"),
+        Index("ix_messages_conversation_id_id", "conversation_id", "id"),
+        Index("ix_messages_conversation_unread", "conversation_id", "read_at"),
+    )
 
 
 class DateProposal(Base):
