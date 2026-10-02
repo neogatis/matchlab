@@ -134,20 +134,22 @@ def _create_match(
     db.flush()
     _persist_match_components(db, match=match, evaluated=evaluated)
 
+    low_notification = Notification(
+        user_id=low,
+        kind="MATCH",
+        text="У вас взаимный интерес — можно начать общение.",
+        created_at=now,
+    )
+    high_notification = Notification(
+        user_id=high,
+        kind="MATCH",
+        text="У вас взаимный интерес — можно начать общение.",
+        created_at=now,
+    )
     db.add_all(
         [
-            Notification(
-                user_id=low,
-                kind="MATCH",
-                text="У вас взаимный интерес — можно начать общение.",
-                created_at=now,
-            ),
-            Notification(
-                user_id=high,
-                kind="MATCH",
-                text="У вас взаимный интерес — можно начать общение.",
-                created_at=now,
-            ),
+            low_notification,
+            high_notification,
             ProductEvent(
                 user_id=None,
                 event_type="MUTUAL_MATCH_CREATED",
@@ -160,6 +162,11 @@ def _create_match(
         ]
     )
     db.flush()
+
+    from app.push.service import enqueue_notification
+
+    enqueue_notification(db, notification_id=low_notification.id, now=now)
+    enqueue_notification(db, notification_id=high_notification.id, now=now)
     return match
 
 
