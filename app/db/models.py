@@ -48,6 +48,22 @@ class User(Base):
     )
 
 
+class AdminAccount(Base):
+    __tablename__ = "admin_accounts"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(24), nullable=False, server_default="VIEWER")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("role IN ('VIEWER','MODERATOR','ADMIN','SUPERADMIN')", name="ck_admin_accounts_role"),
+        Index("ix_admin_accounts_active_role", "is_active", "role"),
+    )
+
+
 class Session(Base):
     __tablename__ = "sessions"
 
