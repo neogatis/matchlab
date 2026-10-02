@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
 import sqlite3
 import sys
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, select, text
@@ -170,11 +171,16 @@ def import_database(sqlite_path: str, postgres_url: str):
         session.flush()
 
         for r in rows(source, "sessions"):
+            created = parse_dt(r["created_at"])
+            secret_hash = hashlib.sha256(r["token"].encode("utf-8")).hexdigest()
             session.add(
                 DbSession(
-                    token=r["token"],
+                    token="legacy:" + secret_hash[:32],
                     user_id=r["user_id"],
-                    created_at=parse_dt(r["created_at"]),
+                    secret_hash=secret_hash,
+                    created_at=created,
+                    expires_at=(created + timedelta(days=30)) if created else None,
+                    last_seen_at=created,
                 )
             )
 
