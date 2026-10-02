@@ -3,6 +3,7 @@ import unittest
 from datetime import date
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.service import hash_password
@@ -132,6 +133,17 @@ class ProfileServiceTests(unittest.TestCase):
         self.assertEqual(profiles.readiness_score("YES","YES"),100)
         self.assertEqual(profiles.readiness_score("RATHER_YES","MAYBE"),66)
         self.assertEqual(profiles.readiness_score("LOOK_ONLY","NO"),12)
+
+    def test_database_rejects_invalid_status(self):
+        with Session(self.engine) as db:
+            p = profiles.upsert_basic_profile(
+                db,user_id=self.user_id,display_name="Dan",dob=date(1997,5,30),
+                gender="M",seek_gender="F",market_code="KZ-ALA",
+            )
+            p.relationship_status = "INVALID_STATUS"
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
 
     def test_matchable_requires_market_and_completed_profile(self):
         with Session(self.engine) as db:
