@@ -508,6 +508,22 @@ class ModerationAction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class Referral(Base):
+    __tablename__ = "referrals"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    referrer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    referral_code_used: Mapped[str] = mapped_column(String(64), nullable=False)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    profile_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("referrer_user_id IS NULL OR referrer_user_id <> referred_user_id", name="ck_referrals_not_self"),
+        Index("ix_referrals_referrer_registered", "referrer_user_id", "registered_at"),
+    )
+
+
 class MarketingAttribution(Base):
     __tablename__ = "marketing_attribution"
 
