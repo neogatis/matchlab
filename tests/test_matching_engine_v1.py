@@ -12,6 +12,7 @@ from app.db.models import (
     PartnerPreference,
     Profile,
     QuestionnaireAnswer,
+    Setting,
     User,
 )
 from app.matching import service as matching
@@ -53,6 +54,9 @@ class MatchingEngineTests(unittest.TestCase):
             self.version_id=version.id
             self.questions=questionnaire.questions_for_version(db,version.id)
             self.question_ids=[q.id for q in self.questions]
+            db.add(Setting(key="PRE_LAUNCH_MODE", value="true"))
+            db.add(Setting(key="PRELAUNCH_MATCHING_ENABLED", value="true"))
+            db.commit()
 
     def add_user(
         self,
