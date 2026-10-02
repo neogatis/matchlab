@@ -473,6 +473,11 @@ class Report(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    __table_args__ = (
+        CheckConstraint("status IN ('OPEN','IN_REVIEW','RESOLVED','DISMISSED')", name="ck_reports_status"),
+        Index("ix_reports_status_created", "status", "created_at"),
+    )
+
 
 class ModerationAction(Base):
     __tablename__ = "moderation_actions"
