@@ -334,6 +334,24 @@ class Photo(Base):
     )
 
 
+class PhotoObjectDeletion(Base):
+    __tablename__ = "photo_object_deletions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING','DONE','FAILED')", name="ck_photo_object_deletions_status"),
+        CheckConstraint("attempts >= 0", name="ck_photo_object_deletions_attempts_nonnegative"),
+        Index("ix_photo_object_deletions_status", "status", "created_at"),
+    )
+
+
 class LegacyPhotoBlob(Base):
     __tablename__ = "legacy_photo_blobs"
 
