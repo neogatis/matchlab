@@ -367,6 +367,7 @@ class Interest(Base):
     to_user: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     state: Mapped[str] = mapped_column(String(24), nullable=False, server_default="INTERESTED")
     source_algorithm_version: Mapped[str | None] = mapped_column(String(64))
+    snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -374,6 +375,7 @@ class Interest(Base):
         CheckConstraint("from_user <> to_user", name="ck_interests_not_self"),
         CheckConstraint("state IN ('INTERESTED','SKIPPED')", name="ck_interests_state"),
         Index("ix_interests_to_state", "to_user", "state"),
+        Index("ix_interests_from_state_snooze", "from_user", "state", "snooze_until"),
     )
 
 
