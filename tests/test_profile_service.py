@@ -162,6 +162,10 @@ class ProfileServiceTests(unittest.TestCase):
 
             market.matching_open = True
             db.commit()
+            self.assertFalse(profiles.is_matchable(p,market))
+
+            p.partner_preferences_completed = True
+            db.commit()
             self.assertTrue(profiles.is_matchable(p,market))
 
             p.relationship_status = "PAUSED"
