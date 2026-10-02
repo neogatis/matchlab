@@ -103,6 +103,7 @@ class MatchingEngineTests(unittest.TestCase):
             nationality=nationality,
             questionnaire_completed=True,
             partner_preferences_completed=True,
+            photos_completed=True,
             profile_completed=True,
             updated_at=updated_at or self.now,
         )
