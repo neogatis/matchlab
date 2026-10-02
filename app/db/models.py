@@ -624,6 +624,52 @@ class Notification(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class PushDevice(Base):
+    __tablename__ = "push_devices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ru-KZ")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "token_hash", name="uq_push_devices_provider_token"),
+        CheckConstraint("provider IN ('APNS','FCM')", name="ck_push_devices_provider"),
+        CheckConstraint("platform IN ('IOS','ANDROID')", name="ck_push_devices_platform"),
+        Index("ix_push_devices_user_enabled", "user_id", "enabled"),
+    )
+
+
+class PushDelivery(Base):
+    __tablename__ = "push_deliveries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    notification_id: Mapped[int] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[int] = mapped_column(ForeignKey("push_devices.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("notification_id", "device_id", name="uq_push_delivery_notification_device"),
+        CheckConstraint("status IN ('PENDING','SENDING','SENT','FAILED','DISABLED')", name="ck_push_deliveries_status"),
+        CheckConstraint("attempts >= 0", name="ck_push_deliveries_attempts_nonnegative"),
+        Index("ix_push_deliveries_dispatch", "status", "next_attempt_at", "created_at"),
+    )
+
+
 class ProductEvent(Base):
     __tablename__ = "product_events"
 
