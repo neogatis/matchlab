@@ -178,12 +178,17 @@ def compare_database(sqlite_path: str, postgres_url: str):
             canonical(pg_rows(pc, "SELECT from_user,to_user,created_at FROM interests ORDER BY from_user,to_user"), ["from_user","to_user","created_at"]),
         )
 
-        assert_equal(
-            report,
-            "matches",
-            canonical(sqlite_rows(sc, "SELECT id,user1,user2,compatibility_score,mutual_fit_score,created_at FROM matches ORDER BY id"), ["id","user1","user2","compatibility_score","mutual_fit_score","created_at"]),
-            canonical(pg_rows(pc, "SELECT id,user1,user2,compatibility_score,mutual_fit_score,created_at FROM matches ORDER BY id"), ["id","user1","user2","compatibility_score","mutual_fit_score","created_at"]),
+        source_matches = canonical(
+            sqlite_rows(sc, "SELECT id,user1,user2,compatibility_score,mutual_fit_score,created_at FROM matches ORDER BY id"),
+            ["id","user1","user2","compatibility_score","mutual_fit_score","created_at"],
         )
+        for row in source_matches:
+            row["user1"], row["user2"] = sorted((row["user1"], row["user2"]))
+        target_matches = canonical(
+            pg_rows(pc, "SELECT id,user1,user2,compatibility_score,mutual_fit_score,created_at FROM matches ORDER BY id"),
+            ["id","user1","user2","compatibility_score","mutual_fit_score","created_at"],
+        )
+        assert_equal(report, "matches", source_matches, target_matches)
 
         assert_equal(
             report,
