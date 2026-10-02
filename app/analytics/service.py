@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Interest, Match, ProductEvent, Profile, Report, User
+from app.db.models import Interest, Match, Message, ProductEvent, Profile, Report, User
 from .events import (
     EVENT_CHAT_STARTED,
     EVENT_MUTUAL_MATCH,
@@ -110,16 +110,21 @@ def analytics_overview(
         or 0
     )
     users_with_match = users_with_relevant_match(db)
-    interested_users = int(
+    interests_sent = int(
         db.scalar(
-            select(func.count(func.distinct(Interest.from_user))).where(
+            select(func.count()).select_from(Interest).where(
                 Interest.state == "INTERESTED"
             )
         )
         or 0
     )
     mutual_matches = int(db.scalar(select(func.count()).select_from(Match)) or 0)
-    chat_started_users = _unique_event_users(db, EVENT_CHAT_STARTED)
+    chat_started_conversations = int(
+        db.scalar(
+            select(func.count(func.distinct(Message.conversation_id))).select_from(Message)
+        )
+        or 0
+    )
     reports = int(db.scalar(select(func.count()).select_from(Report)) or 0)
 
     subscription_started = _unique_event_users(db, EVENT_SUBSCRIPTION_STARTED)
@@ -132,9 +137,9 @@ def analytics_overview(
             "questionnaire_completed": questionnaire_completed,
             "profiles_completed": profiles_completed,
             "users_with_relevant_match": users_with_match,
-            "interested_users": interested_users,
+            "interests_sent": interests_sent,
             "mutual_matches": mutual_matches,
-            "chat_started_users": chat_started_users,
+            "chat_started_conversations": chat_started_conversations,
             "reports": reports,
         },
         "metrics": {
@@ -146,8 +151,8 @@ def analytics_overview(
             ),
             "profile_completion_rate": _pct(profiles_completed, registrations),
             "match_rate": _pct(users_with_match, profiles_completed),
-            "mutual_interest_rate": _pct(mutual_matches, interested_users),
-            "chat_start_rate": _pct(chat_started_users, users_with_match),
+            "mutual_interest_rate": _pct(mutual_matches, interests_sent),
+            "chat_start_rate": _pct(chat_started_conversations, mutual_matches),
             "D1": _retention_rate(db, day=1, now=now),
             "D7": _retention_rate(db, day=7, now=now),
             "D30": _retention_rate(db, day=30, now=now),
