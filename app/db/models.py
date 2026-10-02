@@ -226,6 +226,9 @@ class QuestionnaireQuestion(Base):
     category: Mapped[str] = mapped_column(String(120), nullable=False)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     answer_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="scale")
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    help_text: Mapped[str | None] = mapped_column(Text)
+    options_json: Mapped[list | dict | None] = mapped_column(JSONB)
     weight: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False, server_default="1")
     match_logic: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -233,6 +236,8 @@ class QuestionnaireQuestion(Base):
     __table_args__ = (
         UniqueConstraint("version_id", "legacy_qid", name="uq_questions_version_legacy_qid"),
         UniqueConstraint("version_id", "position", name="uq_questions_version_position"),
+        CheckConstraint("answer_type IN ('single','multiple','scale','priority','text')", name="ck_questions_answer_type"),
+        CheckConstraint("weight > 0", name="ck_questions_positive_weight"),
     )
 
 
