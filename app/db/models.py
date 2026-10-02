@@ -32,6 +32,11 @@ class User(Base):
     referral_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     referred_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     invites_sent: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="ACTIVE")
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    phone_e164: Mapped[str | None] = mapped_column(String(32), unique=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    password_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -43,11 +48,87 @@ class User(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
+    # `token` is now a non-secret selector. The bearer secret is stored only as a hash.
+    # It remains named `token` during the compatibility phase so Phase 2 imports stay readable.
     token: Mapped[str] = mapped_column(String(255), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    secret_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class AuthIdentity(Base):
+    __tablename__ = "auth_identities"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_email: Mapped[str | None] = mapped_column(String(320))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_auth_identity_provider_subject"),
+    )
+
+
+class AuthChallenge(Base):
+    __tablename__ = "auth_challenges"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(40), nullable=False)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("attempts >= 0", name="ck_auth_challenges_attempts_nonnegative"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 20", name="ck_auth_challenges_max_attempts"),
+    )
+
+
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+
+    bucket_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("hits >= 0", name="ck_auth_rate_limits_hits_nonnegative"),
+    )
+
+
+class AuthOutbox(Base):
+    __tablename__ = "auth_outbox"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    recipient: Mapped[str] = mapped_column(String(320), nullable=False)
+    template: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_auth_outbox_pending", "status", "available_at"),
+    )
 
 
 class Profile(Base):
