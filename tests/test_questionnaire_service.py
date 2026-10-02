@@ -2,6 +2,7 @@ import os
 import unittest
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -137,6 +138,40 @@ class QuestionnaireServiceTests(unittest.TestCase):
             self.assertTrue(active.is_active)
             with self.assertRaises(qsvc.QuestionnaireError):
                 qsvc.save_answer(db, user_id=self.user_id, question_id=old_q.id, value=3)
+
+    def test_database_rejects_invalid_answer_type_and_weight(self):
+        with Session(self.engine) as db:
+            version = qsvc.seed_v7_questionnaire(db)
+            db.commit()
+            bad = QuestionnaireQuestion(
+                version_id=version.id,
+                category="X",
+                question_text="Bad",
+                answer_type="unknown",
+                is_required=True,
+                weight=1,
+                match_logic={},
+                position=999,
+            )
+            db.add(bad)
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
+
+            bad2 = QuestionnaireQuestion(
+                version_id=version.id,
+                category="X",
+                question_text="Bad weight",
+                answer_type="scale",
+                is_required=True,
+                weight=0,
+                match_logic={},
+                position=998,
+            )
+            db.add(bad2)
+            with self.assertRaises(IntegrityError):
+                db.commit()
+            db.rollback()
 
     def test_single_multiple_priority_and_text_validation(self):
         with Session(self.engine) as db:
