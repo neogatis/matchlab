@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 
 from scripts.import_v7_sqlite_to_postgres import import_database
+from scripts.compare_v7_sqlite_postgres import compare_database
 
 
 class PostgresMigrationTests(unittest.TestCase):
@@ -84,6 +85,9 @@ class PostgresMigrationTests(unittest.TestCase):
     def test_lossless_core_import_and_normalization(self):
         path = self.fixture()
         import_database(path, self.url)
+        report = compare_database(path, self.url)
+        self.assertTrue(report["ok"], report)
+        self.assertTrue(all(x["ok"] for x in report["checks"].values()), report)
         with self.engine.connect() as c:
             self.assertEqual(c.execute(text("SELECT count(*) FROM users")).scalar_one(),2)
             self.assertEqual(c.execute(text("SELECT count(*) FROM questionnaire_questions")).scalar_one(),64)
