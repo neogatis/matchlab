@@ -1,0 +1,47 @@
+name: phase15-prelaunch
+
+on:
+  push:
+    branches: [phase15-prelaunch]
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/prelaunch/**"
+      - "app/matching/**"
+      - "app/interests/**"
+      - "tests/test_prelaunch_service.py"
+      - ".github/workflows/phase15-prelaunch.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements-auth.txt
+      - run: alembic upgrade head
+      - run: alembic check
+      - run: python -m unittest tests.test_prelaunch_service -v
+      - run: python -m unittest tests.test_interest_service -v
+      - run: python -m unittest tests.test_matching_engine_v1 -v

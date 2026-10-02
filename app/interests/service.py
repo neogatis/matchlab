@@ -13,9 +13,9 @@ from app.db.models import (
     MatchScoreComponent,
     Notification,
     ProductEvent,
-    Setting,
 )
 from app.matching.service import evaluate_pair
+from app.prelaunch.policy import candidate_output_enabled
 
 
 SKIP_COOLDOWN = timedelta(days=30)
@@ -41,23 +41,8 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _setting_bool(db: Session, key: str, default: bool) -> bool:
-    row = db.get(Setting, key)
-    if row is None:
-        return default
-    value = (row.value or "").strip().lower()
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
 def interest_actions_enabled(db: Session) -> bool:
-    prelaunch = _setting_bool(db, "PRE_LAUNCH_MODE", True)
-    if not prelaunch:
-        return True
-    return _setting_bool(db, "PRELAUNCH_MATCHING_ENABLED", False)
+    return candidate_output_enabled(db)
 
 
 def _canonical_pair(a: int, b: int) -> tuple[int, int]:

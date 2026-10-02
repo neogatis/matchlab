@@ -23,6 +23,7 @@ from app.db.models import (
     User,
 )
 from app.profile.service import is_matchable, user_age
+from app.prelaunch.policy import candidate_output_enabled
 from .config import ALGORITHM_VERSION, CATEGORY_SECTIONS, FINAL_WEIGHTS, SOFT_IMPORTANCE_WEIGHT
 
 
@@ -481,6 +482,8 @@ def rank_candidates(
 ) -> list[dict[str, Any]]:
     if limit < 1 or limit > 20:
         raise ValueError("limit must be between 1 and 20")
+    if not candidate_output_enabled(db):
+        return []
     now = now or utcnow()
     source = db.get(Profile, user_id)
     source_market = _market(db, source)
