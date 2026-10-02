@@ -275,11 +275,12 @@ def import_database(sqlite_path: str, postgres_url: str):
 
         match_ids = []
         for r in rows(source, "matches"):
+            user1, user2 = sorted((r["user1"], r["user2"]))
             session.add(
                 Match(
                     id=r["id"],
-                    user1=r["user1"],
-                    user2=r["user2"],
+                    user1=user1,
+                    user2=user2,
                     compatibility_score=r["compatibility_score"],
                     mutual_fit_score=r["mutual_fit_score"],
                     algorithm_version="legacy-v7",
