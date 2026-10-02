@@ -540,6 +540,11 @@ class ProductEvent(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    __table_args__ = (
+        Index("ix_product_events_user_created", "user_id", "created_at"),
+        Index("ix_product_events_type_created", "event_type", "created_at"),
+    )
+
 
 class Setting(Base):
     __tablename__ = "settings"
