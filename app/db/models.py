@@ -165,7 +165,7 @@ class Profile(Base):
     seek_gender: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
     city: Mapped[str] = mapped_column(String(120), nullable=False, server_default="")
     country_code: Mapped[str] = mapped_column(String(2), nullable=False, server_default="KZ")
-    market_id: Mapped[int | None] = mapped_column(ForeignKey("markets.id", ondelete="SET NULL"), index=True)
+    market_id: Mapped[int | None] = mapped_column(ForeignKey("markets.id", name="fk_profiles_market_id", ondelete="SET NULL"), index=True)
     preferred_locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ru-KZ")
     relationship_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="PAUSED")
     eligibility_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="NOT_ACTIVE_FOR_MATCHING")
