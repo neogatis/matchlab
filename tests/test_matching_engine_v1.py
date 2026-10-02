@@ -30,7 +30,7 @@ class MatchingEngineTests(unittest.TestCase):
     def setUp(self):
         with self.engine.begin() as c:
             c.execute(text(
-                "TRUNCATE TABLE users, markets, questionnaire_versions RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE settings, users, markets, questionnaire_versions RESTART IDENTITY CASCADE"
             ))
 
         self.now = datetime.now(timezone.utc)
