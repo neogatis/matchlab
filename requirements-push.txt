@@ -1,2 +1,0 @@
--r requirements-auth.txt
-cryptography==46.0.2
