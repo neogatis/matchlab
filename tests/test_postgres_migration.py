@@ -62,7 +62,7 @@ class PostgresMigrationTests(unittest.TestCase):
             (1,"A","1995-01-01","M","F","Алматы","ACTIVE_SEARCH","ACTIVE_FOR_MATCHING","SERIOUS","YES","YES",100,"bio",183,"NO","RARE","ACTIVE","","","OK","YES",1,1,now,now),
             (2,"B","1997-01-01","F","M","Алматы","OPEN_TO_MATCH","ACTIVE_FOR_MATCHING","SERIOUS","RATHER_YES","MAYBE",66,"bio",168,"NO","RARE","ACTIVE","","","OK","YES",1,1,now,now),
         ]
-        c.executemany("INSERT INTO profiles VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", profiles)
+        c.executemany("INSERT INTO profiles VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", profiles)
         c.execute("INSERT INTO criteria VALUES(?,?,?)",(1,'{"age":{"min":25,"max":35,"importance":"REQUIRED"},"city":{"value":"Алматы","allow_other_city":false,"importance":"IMPORTANT"}}',now))
         c.execute("INSERT INTO criteria VALUES(?,?,?)",(2,'{"age":{"min":25,"max":40,"importance":"REQUIRED"}}',now))
         c.executemany("INSERT INTO answers VALUES(?,?,?)", [(u,q,3) for u in (1,2) for q in range(1,65)])
