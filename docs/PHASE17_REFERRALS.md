@@ -62,6 +62,13 @@ These metrics measure useful acquired profiles rather than clicks alone.
 
 The referral subsystem does not require address-book upload, phone contacts or email recipient lists.
 
-## Existing database
+## Database
 
-The normalized `referrals` and `marketing_attribution` tables were part of the production PostgreSQL foundation, so Phase 17 requires no new schema migration.
+`marketing_attribution` already exists in the PostgreSQL foundation.
+
+Phase 17 adds the normalized `referrals` table through Alembic:
+- one referred user can have only one referral attribution;
+- referrer deletion preserves the acquisition record by setting `referrer_user_id` to NULL;
+- referred-user deletion removes the referral row;
+- self-referral is blocked in both service logic and the database;
+- indexes support referrer funnel metrics by registration time.
