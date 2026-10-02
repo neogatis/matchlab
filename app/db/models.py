@@ -366,7 +366,17 @@ class Interest(Base):
     from_user: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     to_user: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     state: Mapped[str] = mapped_column(String(24), nullable=False, server_default="INTERESTED")
+    source_algorithm_version: Mapped[str | None] = mapped_column(String(64))
+    snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("from_user <> to_user", name="ck_interests_not_self"),
+        CheckConstraint("state IN ('INTERESTED','SKIPPED')", name="ck_interests_state"),
+        Index("ix_interests_to_state", "to_user", "state"),
+        Index("ix_interests_from_state_snooze", "from_user", "state", "snooze_until"),
+    )
 
 
 class Match(Base):
@@ -384,6 +394,7 @@ class Match(Base):
         UniqueConstraint("user1", "user2", name="uq_matches_pair"),
         CheckConstraint("compatibility_score BETWEEN 0 AND 100", name="ck_matches_compatibility"),
         CheckConstraint("mutual_fit_score BETWEEN 0 AND 100", name="ck_matches_mutual_fit"),
+        CheckConstraint("user1 < user2", name="ck_matches_canonical_pair"),
         Index("ix_matches_user1_created", "user1", "created_at"),
         Index("ix_matches_user2_created", "user2", "created_at"),
     )

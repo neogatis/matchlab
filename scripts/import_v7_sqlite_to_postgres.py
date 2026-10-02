@@ -264,22 +264,27 @@ def import_database(sqlite_path: str, postgres_url: str):
             session.add(LegacyPhotoBlob(photo_id=photo_id, base64_data=base64_data))
 
         for r in rows(source, "likes"):
+            created = parse_dt(r["created_at"])
             session.add(
                 Interest(
                     from_user=r["from_user"],
                     to_user=r["to_user"],
                     state="INTERESTED",
-                    created_at=parse_dt(r["created_at"]),
+                    source_algorithm_version="legacy-v7",
+                    snooze_until=None,
+                    created_at=created,
+                    updated_at=created,
                 )
             )
 
         match_ids = []
         for r in rows(source, "matches"):
+            user1, user2 = sorted((r["user1"], r["user2"]))
             session.add(
                 Match(
                     id=r["id"],
-                    user1=r["user1"],
-                    user2=r["user2"],
+                    user1=user1,
+                    user2=user2,
                     compatibility_score=r["compatibility_score"],
                     mutual_fit_score=r["mutual_fit_score"],
                     algorithm_version="legacy-v7",
