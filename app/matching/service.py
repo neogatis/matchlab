@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     Block,
+    Interest,
     Market,
+    Match,
     PartnerPreference,
     ProductEvent,
     Profile,
@@ -428,6 +430,41 @@ def evaluate_pair(
     }
 
 
+def _excluded_candidate_ids(
+    db: Session,
+    *,
+    user_id: int,
+    now: datetime,
+) -> set[int]:
+    decision_ids = set(
+        db.execute(
+            select(Interest.to_user).where(
+                Interest.from_user == user_id,
+                or_(
+                    Interest.state == "INTERESTED",
+                    and_(
+                        Interest.state == "SKIPPED",
+                        or_(
+                            Interest.snooze_until.is_(None),
+                            Interest.snooze_until > now,
+                        ),
+                    ),
+                ),
+            )
+        ).scalars()
+    )
+
+    matched_ids: set[int] = set()
+    for user1, user2 in db.execute(
+        select(Match.user1, Match.user2).where(
+            or_(Match.user1 == user_id, Match.user2 == user_id)
+        )
+    ):
+        matched_ids.add(user2 if user1 == user_id else user1)
+
+    return decision_ids | matched_ids
+
+
 def rank_candidates(
     db: Session,
     *,
@@ -438,26 +475,33 @@ def rank_candidates(
 ) -> list[dict[str, Any]]:
     if limit < 1 or limit > 20:
         raise ValueError("limit must be between 1 and 20")
+    now = now or utcnow()
     source = db.get(Profile, user_id)
     source_market = _market(db, source)
     if not is_matchable(source, source_market):
         return []
 
+    excluded_ids = _excluded_candidate_ids(db, user_id=user_id, now=now)
+
+    query = (
+        select(Profile.user_id)
+        .join(Market, Market.id == Profile.market_id)
+        .where(
+            Profile.user_id != user_id,
+            Profile.profile_completed.is_(True),
+            Profile.questionnaire_completed.is_(True),
+            Profile.partner_preferences_completed.is_(True),
+            Profile.photos_completed.is_(True),
+            Profile.eligibility_status == "ACTIVE_FOR_MATCHING",
+            Profile.relationship_status.in_(("ACTIVE_SEARCH", "OPEN_TO_MATCH")),
+            Market.matching_open.is_(True),
+        )
+    )
+    if excluded_ids:
+        query = query.where(Profile.user_id.not_in(excluded_ids))
+
     candidate_ids = list(
-        db.execute(
-            select(Profile.user_id)
-            .join(Market, Market.id == Profile.market_id)
-            .where(
-                Profile.user_id != user_id,
-                Profile.profile_completed.is_(True),
-                Profile.questionnaire_completed.is_(True),
-                Profile.partner_preferences_completed.is_(True),
-                Profile.eligibility_status == "ACTIVE_FOR_MATCHING",
-                Profile.relationship_status.in_(("ACTIVE_SEARCH", "OPEN_TO_MATCH")),
-                Market.matching_open.is_(True),
-            )
-            .limit(pool_limit)
-        ).scalars()
+        db.execute(query.limit(pool_limit)).scalars()
     )
 
     ranked = []
