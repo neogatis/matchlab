@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.events import EVENT_PHOTO_UPLOADED, track_event
+from app.profile.service import recompute_profile_completion
 from app.db.models import (
     ModerationAction,
     Photo,
@@ -387,6 +388,7 @@ def recompute_photo_completion(db: Session, *, user_id: int) -> bool:
 
     profile.photos_completed = approved_count >= MIN_PHOTOS and approved_main
     db.flush()
+    recompute_profile_completion(db, user_id=user_id)
     return profile.photos_completed
 
 
