@@ -768,6 +768,7 @@ def state(
             },
             "portrait": _portrait(snapshot),
             "question": None,
+            "prefetch": [],
         }
 
     legacy = _legacy_answers_by_qid(db, user_id)
@@ -778,6 +779,15 @@ def state(
     if base_answered < len(BASE_ORDER):
         qid = next(qid for qid in BASE_ORDER if qid not in legacy)
         percent = int(round(base_answered * 70 / len(BASE_ORDER)))
+        remaining_qids = [
+            item
+            for item in BASE_ORDER
+            if item not in legacy
+        ][:QUEUE_SIZE]
+        serialized = [
+            _serialize_base_question(db, item)
+            for item in remaining_qids
+        ]
         return {
             "mode": ADAPTIVE_VERSION,
             "phase": "BASE",
@@ -792,7 +802,8 @@ def state(
                 "percent": percent,
             },
             "portrait": _portrait(snapshot),
-            "question": _serialize_base_question(db, qid),
+            "question": serialized[0],
+            "prefetch": serialized[1:],
         }
 
     if _should_finish(snapshot, adaptive_answered):
@@ -849,6 +860,10 @@ def state(
         },
         "portrait": _portrait(snapshot),
         "question": _serialize_adaptive_question(pending[0]),
+        "prefetch": [
+            _serialize_adaptive_question(item)
+            for item in pending[1:QUEUE_SIZE]
+        ],
     }
 
 
