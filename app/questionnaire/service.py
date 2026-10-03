@@ -152,6 +152,42 @@ def sections(db: Session, version_id: int | None = None) -> list[dict[str, Any]]
     ]
 
 
+
+def answers_for_user(
+    db: Session,
+    *,
+    user_id: int,
+    version_id: int | None = None,
+) -> dict[int, Any]:
+    version = db.get(QuestionnaireVersion, version_id) if version_id else active_version(db)
+    if version is None:
+        raise QuestionnaireNotConfigured("Questionnaire version not found")
+
+    rows = db.execute(
+        select(QuestionnaireAnswer, QuestionnaireQuestion)
+        .join(
+            QuestionnaireQuestion,
+            QuestionnaireQuestion.id == QuestionnaireAnswer.question_id,
+        )
+        .where(
+            QuestionnaireAnswer.user_id == user_id,
+            QuestionnaireQuestion.version_id == version.id,
+        )
+        .order_by(QuestionnaireQuestion.position)
+    ).all()
+
+    out: dict[int, Any] = {}
+    for answer, question in rows:
+        if answer.value_int is not None:
+            value: Any = int(answer.value_int)
+        elif answer.value_json is not None:
+            value = answer.value_json
+        else:
+            value = answer.value_text
+        out[int(question.id)] = value
+    return out
+
+
 def _normalize_answer(question: QuestionnaireQuestion, value: Any) -> tuple[int | None, str | None, Any]:
     kind = question.answer_type
 
