@@ -49,3 +49,7 @@ Next: production deployment evidence, deletion worker, privacy/delete/export, th
 26. **Phase 26 — Privacy / deletion / export / retention**: self-service export and deletion, external web deletion path, pseudonymous purge, legal pages and enforced cleanup windows.
 
 Next: production cutover evidence and scheduled workers; then provider auth/push/billing and native clients.
+
+27. **Phase 27 — Phone OTP + Google + Apple auth**: multichannel authentication and account linking with one-time OIDC nonce protection.
+
+Next: production provider credentials, push delivery, billing provider verification, then native clients.
