@@ -197,14 +197,19 @@ def photo_storage_configured() -> bool:
 
 
 def phone_auth_configured() -> bool:
-    has_sender = bool(
-        os.environ.get("TWILIO_FROM_NUMBER", "").strip()
-        or os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "").strip()
-    )
-    return all(
-        os.environ.get(name, "").strip()
-        for name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
-    ) and has_sender
+    provider = os.environ.get("SMS_PROVIDER", "mobizon").strip().lower() or "mobizon"
+    if provider == "mobizon":
+        return bool(os.environ.get("MOBIZON_API_KEY", "").strip())
+    if provider == "twilio":
+        has_sender = bool(
+            os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+            or os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "").strip()
+        )
+        return all(
+            os.environ.get(name, "").strip()
+            for name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
+        ) and has_sender
+    return False
 
 
 def social_auth_configured() -> dict[str, bool]:
