@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         scroll.addView(root)
+        setContentView(scroll)
 
         val brandRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -89,9 +90,8 @@ class MainActivity : AppCompatActivity() {
 
         val heroImage = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageBitmap(HeroCoupleAsset.bitmap())
             background = MatchLabStyle.rounded(
-                MatchLabStyle.SURFACE,
+                MatchLabStyle.SURFACE_SOFT,
                 MatchLabStyle.dp(this@MainActivity, 22),
             )
             clipToOutline = true
@@ -100,6 +100,9 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 MatchLabStyle.dp(this@MainActivity, 220),
             )
+            runCatching {
+                setImageResource(R.drawable.matchlab_hero_couple)
+            }
         }
         root.addView(heroImage)
         MatchLabStyle.withMargins(heroImage, top = 0, bottom = 18)
@@ -356,7 +359,6 @@ class MainActivity : AppCompatActivity() {
             )
         })
 
-        setContentView(scroll)
 
         sendCodeButton.setOnClickListener {
             val phone = phoneInput.text.toString().trim()
