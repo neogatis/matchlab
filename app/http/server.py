@@ -44,6 +44,8 @@ from app.auth.web import phone_login_html
 from app.db.models import AuthIdentity, Market, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
+from app.console.dashboard import prelaunch_dashboard_html
+from app.console.metrics import prelaunch_metrics
 from app.console.web import photo_moderation_html
 from app.photos.service import (
     PhotoError,
@@ -341,7 +343,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/30"
+    server_version = "MatchLab/31"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -437,7 +439,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 30,
+                        "phase": 31,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -634,6 +636,31 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     photo_moderation_html(),
                     content_type="text/html; charset=utf-8",
+                )
+                return
+
+            if method == "GET" and path == "/ops":
+                require_console(
+                    db,
+                    user_id=principal.user_id,
+                    minimum_role="VIEWER",
+                )
+                self._send_text(
+                    HTTPStatus.OK,
+                    prelaunch_dashboard_html(),
+                    content_type="text/html; charset=utf-8",
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/admin/prelaunch/metrics":
+                require_console(
+                    db,
+                    user_id=principal.user_id,
+                    minimum_role="VIEWER",
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    prelaunch_metrics(db),
                 )
                 return
 
