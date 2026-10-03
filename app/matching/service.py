@@ -477,7 +477,7 @@ def rank_candidates(
     *,
     user_id: int,
     limit: int = 5,
-    pool_limit: int = 5000,
+    pool_limit: int = 1000,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     if limit < 1 or limit > 20:
