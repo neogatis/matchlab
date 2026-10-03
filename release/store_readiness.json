@@ -1,0 +1,46 @@
+{
+  "product": "MatchLab",
+  "minimum_age": 18,
+  "submission_ready": false,
+  "product_principle": "Small number of mutually relevant candidates instead of an endless swipe feed.",
+  "plans": ["FREE", "PREMIUM", "PREMIUM_PLUS"],
+  "one_time_products": ["DEEP_COMPATIBILITY_REPORT"],
+  "platforms": {
+    "ios": {
+      "native_client_present": false,
+      "bundle_id": null,
+      "release_pipeline_present": false,
+      "apple_sign_in_production": false,
+      "push_delivery_production": false,
+      "billing_verification_production": false
+    },
+    "android": {
+      "native_client_present": false,
+      "application_id": null,
+      "release_pipeline_present": false,
+      "google_sign_in_production": false,
+      "push_delivery_production": false,
+      "billing_verification_production": false
+    }
+  },
+  "public_runtime": {
+    "postgres_http_runtime": false,
+    "secure_http_boundary": false,
+    "photo_object_storage": false
+  },
+  "legal": {
+    "privacy_policy_url": null,
+    "terms_url": null,
+    "data_export_user_flow": false,
+    "account_deletion_user_flow": false,
+    "retention_policy_published": false
+  },
+  "safety": {
+    "photo_moderation_domain": true,
+    "block_and_report_domain": true
+  },
+  "review": {
+    "store_metadata_complete": false,
+    "review_test_account_ready": false
+  }
+}
