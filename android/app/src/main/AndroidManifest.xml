@@ -9,6 +9,10 @@
         android:theme="@style/Theme.MatchLab">
 
         <activity
+            android:name=".RegistrationActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".OnboardingActivity"
             android:exported="false" />
 
