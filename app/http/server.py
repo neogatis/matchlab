@@ -18,14 +18,28 @@ from sqlalchemy.orm import sessionmaker
 from app.auth.service import (
     AuthError,
     InvalidCredentials,
+    InvalidOrExpiredChallenge,
     RateLimited,
     authenticate_password,
+    consume_oidc_nonce,
+    create_oidc_nonce,
     create_session,
     lookup_session,
     register_email_user,
+    request_phone_link_code,
+    request_phone_login_code,
     revoke_session,
+    verify_phone_link_code,
+    verify_phone_login_code,
 )
-from app.db.models import Photo, User
+from app.auth.oauth import (
+    OAuthError,
+    link_identity,
+    login_or_register_identity,
+    verify_identity_token,
+)
+from app.auth.sms import SmsError, sms_sender_from_env
+from app.db.models import AuthIdentity, Photo, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.photos.service import (
@@ -182,6 +196,24 @@ def photo_storage_configured() -> bool:
     return all(os.environ.get(name, "").strip() for name in required)
 
 
+def phone_auth_configured() -> bool:
+    has_sender = bool(
+        os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+        or os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "").strip()
+    )
+    return all(
+        os.environ.get(name, "").strip()
+        for name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
+    ) and has_sender
+
+
+def social_auth_configured() -> dict[str, bool]:
+    return {
+        "google": bool(os.environ.get("GOOGLE_CLIENT_ID", "").strip()),
+        "apple": bool(os.environ.get("APPLE_CLIENT_ID", "").strip()),
+    }
+
+
 def run_maintenance_once() -> dict[str, Any]:
     result: dict[str, Any] = {}
     with runtime().db() as db:
@@ -234,7 +266,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/26"
+    server_version = "MatchLab/27"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -330,7 +362,9 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 26,
+                        "phase": 27,
+                        "phone_auth_configured": phone_auth_configured(),
+                        "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
                         "features": feature_flags(db),
                     },
@@ -401,6 +435,101 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
             return
 
+        if method == "POST" and path == f"{API_PREFIX}/auth/phone/request":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                request_phone_login_code(
+                    db,
+                    phone_e164=str(body.get("phone", "")),
+                    sender=sms_sender_from_env(),
+                )
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    {"ok": True, "delivery": "sms"},
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/phone/verify":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                user = verify_phone_login_code(
+                    db,
+                    phone_e164=str(body.get("phone", "")),
+                    code=str(body.get("code", "")),
+                    referral_code=body.get("referral_code"),
+                )
+                bearer = create_session(
+                    db,
+                    user.id,
+                    user_agent=self.headers.get("User-Agent", ""),
+                )
+                csrf = new_csrf_token()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "user_id": user.id, "auth_method": "phone"},
+                    cookies=[
+                        SESSION_COOKIE.header(bearer),
+                        CSRF_COOKIE.header(csrf),
+                    ],
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/oidc/nonce":
+            self._origin_guard()
+            body = self._body()
+            provider = str(body.get("provider", "")).upper()
+            with runtime().db() as db:
+                nonce = create_oidc_nonce(
+                    db,
+                    provider=provider,
+                    purpose="OIDC_LOGIN",
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {"provider": provider, "nonce": nonce},
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/oauth":
+            self._origin_guard()
+            body = self._body()
+            provider = str(body.get("provider", "")).upper()
+            nonce = str(body.get("nonce", ""))
+            identity = verify_identity_token(
+                provider=provider,
+                id_token=str(body.get("id_token", "")),
+                expected_nonce=nonce,
+            )
+            with runtime().db() as db:
+                consume_oidc_nonce(
+                    db,
+                    provider=provider,
+                    purpose="OIDC_LOGIN",
+                    nonce=nonce,
+                )
+                user = login_or_register_identity(
+                    db,
+                    identity=identity,
+                    referral_code=body.get("referral_code"),
+                )
+                bearer = create_session(
+                    db,
+                    user.id,
+                    user_agent=self.headers.get("User-Agent", ""),
+                )
+                csrf = new_csrf_token()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "user_id": user.id, "auth_method": provider.lower()},
+                    cookies=[
+                        SESSION_COOKIE.header(bearer),
+                        CSRF_COOKIE.header(csrf),
+                    ],
+                )
+            return
+
         with runtime().db() as db:
             principal = self._principal(db)
 
@@ -418,6 +547,104 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         SESSION_COOKIE.header("deleted") + "; Max-Age=0",
                         CSRF_COOKIE.header("deleted") + "; Max-Age=0",
                     ],
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/auth/methods":
+                identities = list(
+                    db.execute(
+                        select(AuthIdentity)
+                        .where(AuthIdentity.user_id == principal.user_id)
+                        .order_by(AuthIdentity.provider)
+                    ).scalars()
+                )
+                user = db.get(User, principal.user_id)
+                methods = {row.provider.lower() for row in identities}
+                if user and not user.email.endswith(
+                    ("@phone.matchlab.invalid", "@identity.matchlab.invalid")
+                ):
+                    methods.add("email")
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "methods": sorted(methods),
+                        "phone": user.phone_e164 if user else None,
+                        "phone_verified": bool(user and user.phone_verified_at),
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/auth/link/phone/request":
+                body = self._body()
+                request_phone_link_code(
+                    db,
+                    user_id=principal.user_id,
+                    phone_e164=str(body.get("phone", "")),
+                    sender=sms_sender_from_env(),
+                )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "delivery": "sms"})
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/auth/link/phone/verify":
+                body = self._body()
+                user = verify_phone_link_code(
+                    db,
+                    user_id=principal.user_id,
+                    phone_e164=str(body.get("phone", "")),
+                    code=str(body.get("code", "")),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "phone": user.phone_e164,
+                        "phone_verified": bool(user.phone_verified_at),
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/auth/link/oidc/nonce":
+                body = self._body()
+                provider = str(body.get("provider", "")).upper()
+                nonce = create_oidc_nonce(
+                    db,
+                    provider=provider,
+                    purpose="OIDC_LINK",
+                    user_id=principal.user_id,
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {"provider": provider, "nonce": nonce},
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/auth/link/oauth":
+                body = self._body()
+                provider = str(body.get("provider", "")).upper()
+                nonce = str(body.get("nonce", ""))
+                identity = verify_identity_token(
+                    provider=provider,
+                    id_token=str(body.get("id_token", "")),
+                    expected_nonce=nonce,
+                )
+                consume_oidc_nonce(
+                    db,
+                    provider=provider,
+                    purpose="OIDC_LINK",
+                    nonce=nonce,
+                    expected_user_id=principal.user_id,
+                )
+                linked = link_identity(
+                    db,
+                    user_id=principal.user_id,
+                    identity=identity,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "provider": linked.provider.lower(),
+                    },
                 )
                 return
 
@@ -725,6 +952,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
         except DeletionAlreadyRequested as exc:
             self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except (OAuthError, SmsError, InvalidOrExpiredChallenge) as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except PhotoNotFound as exc:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except (
