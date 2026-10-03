@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r /app/requirements-photo.txt \
     && python /app/scripts/verify_baseline.py
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
-CMD ["python", "-u", "/app/scripts/start_postgres_http.py"]
+CMD ["python", "-u", "-m", "scripts.start_postgres_http"]
