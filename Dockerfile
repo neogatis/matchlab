@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
 COPY . /app
-RUN pip install --no-cache-dir -r /app/requirements-auth.txt \
+RUN pip install --no-cache-dir -r /app/requirements-photo.txt \
     && python /app/scripts/reconstruct_baseline.py \
     && python /app/scripts/verify_baseline.py
 ENV PYTHONUNBUFFERED=1
