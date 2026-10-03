@@ -245,6 +245,68 @@ def authenticate_password(
     return user
 
 
+def identifier_login_bucket(kind: str, normalized: str) -> str:
+    return "login-id:" + sha256_text(kind + ":" + normalized)
+
+
+def authenticate_identifier_password(
+    db: OrmSession,
+    identifier: str,
+    password: str,
+    *,
+    apply_rate_limit: bool = True,
+    now: datetime | None = None,
+) -> User:
+    raw = (identifier or "").strip()
+    if not raw:
+        raise InvalidCredentials("Invalid identifier or password")
+
+    if "@" in raw:
+        try:
+            normalized = normalize_email(raw)
+        except AuthError as exc:
+            raise InvalidCredentials("Invalid identifier or password") from exc
+        kind = "email"
+        query = select(User).where(User.email == normalized)
+    else:
+        from app.auth.sms import SmsError, normalize_phone
+
+        try:
+            normalized = normalize_phone(raw)
+        except SmsError as exc:
+            raise InvalidCredentials("Invalid identifier or password") from exc
+        kind = "phone"
+        query = select(User).where(User.phone_e164 == normalized)
+
+    if apply_rate_limit:
+        _rate_limit(
+            db,
+            identifier_login_bucket(kind, normalized),
+            limit=8,
+            window_seconds=15 * 60,
+            block_seconds=15 * 60,
+            now=now,
+        )
+
+    user = db.execute(query).scalar_one_or_none()
+    if not user or user.status not in {"ACTIVE", "SOFT_BANNED"}:
+        raise InvalidCredentials("Invalid identifier or password")
+    if kind == "phone" and user.phone_verified_at is None:
+        raise InvalidCredentials("Invalid identifier or password")
+
+    ok, needs_upgrade = verify_password(password, user.password_hash)
+    if not ok:
+        raise InvalidCredentials("Invalid identifier or password")
+
+    if needs_upgrade:
+        validate_password(password)
+        user.password_hash = PASSWORD_HASHER.hash(password)
+        user.password_updated_at = now or utcnow()
+        db.flush()
+
+    return user
+
+
 def create_session(
     db: OrmSession,
     user_id: int,
@@ -574,6 +636,7 @@ def verify_phone_login_code(
     phone_e164: str,
     code: str,
     referral_code: str | None = None,
+    new_password: str | None = None,
     now: datetime | None = None,
 ) -> User:
     from app.auth.sms import normalize_phone
@@ -647,6 +710,11 @@ def verify_phone_login_code(
                     verified_at=now,
                 )
             )
+
+    if new_password is not None:
+        user.password_hash = hash_password(new_password)
+        user.password_updated_at = now
+        revoke_all_sessions(db, user.id, now=now)
 
     db.flush()
     return user
