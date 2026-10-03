@@ -7,6 +7,7 @@ on:
       - "app/http/**"
       - "scripts/process_privacy_maintenance.py"
       - "tests/test_privacy_service.py"
+      - "tests/test_store_readiness.py"
       - "legal/**"
       - "release/store_readiness.json"
       - "app/release/**"
