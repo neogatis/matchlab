@@ -41,12 +41,39 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _audience(provider: str) -> str:
-    key = "GOOGLE_CLIENT_ID" if provider == "GOOGLE" else "APPLE_CLIENT_ID"
-    value = os.environ.get(key, "").strip()
-    if not value:
-        raise OAuthError(key.lower() + "_missing")
-    return value
+def _csv_env(*names: str) -> list[str]:
+    values: list[str] = []
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        for item in raw.split(","):
+            item = item.strip()
+            if item and item not in values:
+                values.append(item)
+    return values
+
+
+def configured_audiences(provider: str) -> list[str]:
+    provider = (provider or "").strip().upper()
+    if provider == "GOOGLE":
+        values = _csv_env(
+            "GOOGLE_SERVER_CLIENT_ID",
+            "GOOGLE_CLIENT_IDS",
+            "GOOGLE_CLIENT_ID",  # backwards-compatible alias
+        )
+        missing = "google_server_client_id_missing"
+    elif provider == "APPLE":
+        values = _csv_env(
+            "APPLE_CLIENT_IDS",
+            "APPLE_CLIENT_ID",  # backwards-compatible alias
+        )
+        missing = "apple_client_id_missing"
+    else:
+        raise OAuthError("unsupported_oauth_provider")
+    if not values:
+        raise OAuthError(missing)
+    return values
 
 
 def _jwks_url(provider: str) -> str:
@@ -72,7 +99,7 @@ def verify_identity_token(
             id_token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=_audience(provider),
+            audience=configured_audiences(provider),
             options={"require": ["exp", "iat", "sub", "iss"]},
         )
     except Exception as exc:
