@@ -130,7 +130,7 @@ class MatchLabApi(context: Context) {
             val json = if (raw.isBlank()) JSONObject() else JSONObject(raw)
             if (!response.isSuccessful) {
                 throw IllegalStateException(
-                    json.optString("error", "HTTP \${response.code}")
+                    json.optString("error", "HTTP ${response.code}")
                 )
             }
             json
@@ -151,7 +151,7 @@ class MatchLabApi(context: Context) {
                 val json = if (raw.isBlank()) JSONObject() else JSONObject(raw)
                 if (!response.isSuccessful) {
                     throw IllegalStateException(
-                        json.optString("error", "HTTP \${response.code}")
+                        json.optString("error", "HTTP ${response.code}")
                     )
                 }
                 json
