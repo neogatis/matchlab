@@ -102,6 +102,40 @@ class MainActivity : AppCompatActivity() {
         root.addView(valueCard)
         MatchLabStyle.withMargins(valueCard, top = 4, bottom = 20)
 
+        val accountTabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val accountLoginTab = Button(this).apply {
+            text = "Вход"
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                MatchLabStyle.dp(this@MainActivity, 52),
+                1f,
+            ).apply {
+                marginEnd = MatchLabStyle.dp(this@MainActivity, 6)
+            }
+            MatchLabStyle.primaryButton(this)
+        }
+        val accountRegisterTab = Button(this).apply {
+            text = "Регистрация"
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                MatchLabStyle.dp(this@MainActivity, 52),
+                1f,
+            ).apply {
+                marginStart = MatchLabStyle.dp(this@MainActivity, 6)
+            }
+            MatchLabStyle.secondaryButton(this)
+        }
+        accountTabs.addView(accountLoginTab)
+        accountTabs.addView(accountRegisterTab)
+        root.addView(accountTabs)
+        MatchLabStyle.withMargins(accountTabs, top = 0, bottom = 14)
+
+        accountRegisterTab.setOnClickListener {
+            startActivity(Intent(this, RegistrationActivity::class.java))
+        }
+
         val authCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
