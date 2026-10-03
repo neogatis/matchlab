@@ -78,14 +78,14 @@ def current_matchlab_readiness() -> StoreReadiness:
     # demonstrably complete in the current repository architecture are true.
     return evaluate_store_readiness(
         {
-            "postgres_http_runtime": False,
-            "secure_http_boundary": False,
-            "privacy_policy_url": False,
-            "terms_url": False,
+            "postgres_http_runtime": True,
+            "secure_http_boundary": True,
+            "privacy_policy_url": True,
+            "terms_url": True,
             "account_deletion_flow": True,
             "data_export_flow": True,
             "retention_policy": True,
-            "photo_object_storage": False,
+            "photo_object_storage": True,
             "photo_moderation": True,
             "block_and_report": True,
             "push_provider_delivery": False,
