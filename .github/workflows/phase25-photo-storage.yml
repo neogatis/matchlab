@@ -9,6 +9,7 @@ on:
       - "tests/test_photo_sanitizer.py"
       - "requirements-photo.txt"
       - "Dockerfile"
+      - "scripts/process_photo_deletions.py"
       - ".github/workflows/phase25-photo-storage.yml"
   pull_request:
 
@@ -39,4 +40,4 @@ jobs:
       - run: pip install -r requirements-photo.txt
       - run: alembic upgrade head
       - run: python -m unittest tests.test_photos_service tests.test_photo_sanitizer tests.test_http_runtime_contract tests.test_security_http -v
-      - run: python -m py_compile app/photos/storage.py app/photos/service.py app/http/server.py
+      - run: python -m py_compile app/photos/storage.py app/photos/service.py app/http/server.py scripts/process_photo_deletions.py
