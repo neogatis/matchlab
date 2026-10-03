@@ -41,7 +41,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Photo, User
+from app.db.models import AuthIdentity, Photo, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.photos.service import (
@@ -60,6 +60,14 @@ from app.photos.service import (
     set_main_photo,
 )
 from app.photos.storage import S3PhotoStorage
+from app.push.fcm import FcmProviderClient
+from app.push.service import (
+    PushError,
+    disable_device,
+    dispatch_pending,
+    register_device,
+)
+from app.push.storage import S3PushTokenVault
 from app.preferences.catalog import PREFERENCE_CATALOG
 from app.preferences.service import (
     InvalidPreference,
@@ -171,6 +179,8 @@ class Runtime:
 
 RUNTIME: Runtime | None = None
 PHOTO_STORAGE: S3PhotoStorage | None = None
+PUSH_TOKEN_VAULT: S3PushTokenVault | None = None
+FCM_CLIENT: FcmProviderClient | None = None
 
 
 def runtime() -> Runtime:
@@ -187,6 +197,20 @@ def photo_storage() -> S3PhotoStorage:
     return PHOTO_STORAGE
 
 
+def push_token_vault() -> S3PushTokenVault:
+    global PUSH_TOKEN_VAULT
+    if PUSH_TOKEN_VAULT is None:
+        PUSH_TOKEN_VAULT = S3PushTokenVault.from_env()
+    return PUSH_TOKEN_VAULT
+
+
+def fcm_client() -> FcmProviderClient:
+    global FCM_CLIENT
+    if FCM_CLIENT is None:
+        FCM_CLIENT = FcmProviderClient.from_env()
+    return FCM_CLIENT
+
+
 def photo_storage_configured() -> bool:
     required = (
         "MATCH_PHOTO_BUCKET",
@@ -196,6 +220,21 @@ def photo_storage_configured() -> bool:
         "AWS_SECRET_ACCESS_KEY",
     )
     return all(os.environ.get(name, "").strip() for name in required)
+
+
+def push_token_vault_configured() -> bool:
+    required = (
+        "MATCH_PUSH_TOKEN_BUCKET",
+        "AWS_ENDPOINT_URL_S3",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    )
+    return all(os.environ.get(name, "").strip() for name in required)
+
+
+def fcm_configured() -> bool:
+    return bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip())
 
 
 def phone_auth_configured() -> bool:
@@ -240,6 +279,24 @@ def run_maintenance_once() -> dict[str, Any]:
             )
         else:
             result["photo_deletions"] = {"skipped": "photo_storage_not_configured"}
+
+        if push_token_vault_configured() and fcm_configured():
+            deliveries = dispatch_pending(
+                db,
+                clients={"FCM": fcm_client()},
+                vault=push_token_vault(),
+                limit=100,
+            )
+            result["push_deliveries"] = {
+                "processed": len(deliveries),
+                "sent": sum(1 for item in deliveries if item.status == "SENT"),
+                "failed": sum(1 for item in deliveries if item.status == "FAILED"),
+                "disabled": sum(1 for item in deliveries if item.status == "DISABLED"),
+            }
+        else:
+            result["push_deliveries"] = {
+                "skipped": "push_provider_not_configured"
+            }
     return result
 
 
@@ -279,7 +336,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/27"
+    server_version = "MatchLab/28"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -375,10 +432,14 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 27,
+                        "phase": 28,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
+                        "push": {
+                            "token_vault": push_token_vault_configured(),
+                            "fcm": fcm_configured(),
+                        },
                         "features": feature_flags(db),
                     },
                 )
@@ -667,6 +728,68 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "provider": linked.provider.lower(),
                     },
                 )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/push/devices":
+                devices = list(
+                    db.execute(
+                        select(PushDevice)
+                        .where(PushDevice.user_id == principal.user_id)
+                        .order_by(PushDevice.id)
+                    ).scalars()
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "devices": [
+                            {
+                                "id": item.id,
+                                "provider": item.provider,
+                                "platform": item.platform,
+                                "locale": item.locale,
+                                "enabled": item.enabled,
+                                "last_seen_at": item.last_seen_at,
+                            }
+                            for item in devices
+                        ]
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/push/devices":
+                body = self._body()
+                item = register_device(
+                    db,
+                    user_id=principal.user_id,
+                    provider="FCM",
+                    platform="ANDROID",
+                    token=str(body.get("token", "")),
+                    vault=push_token_vault(),
+                    locale=str(body.get("locale", "ru-KZ")),
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "id": item.id,
+                        "provider": item.provider,
+                        "platform": item.platform,
+                        "enabled": item.enabled,
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/push/devices/disable":
+                body = self._body()
+                device_id = int(body.get("device_id", 0))
+                device = db.get(PushDevice, device_id)
+                if device is None or device.user_id != principal.user_id:
+                    raise ApiError(HTTPStatus.NOT_FOUND, "push_device_not_found")
+                disable_device(
+                    db,
+                    device_id=device_id,
+                    vault=push_token_vault(),
+                )
+                self._send_json(HTTPStatus.OK, {"ok": True})
                 return
 
             if method == "POST" and path == f"{API_PREFIX}/profile/basic":
@@ -973,7 +1096,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
         except DeletionAlreadyRequested as exc:
             self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
-        except (OAuthError, SmsError, InvalidOrExpiredChallenge) as exc:
+        except (OAuthError, SmsError, InvalidOrExpiredChallenge, PushError) as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except PhotoNotFound as exc:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
