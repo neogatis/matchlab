@@ -1,0 +1,53 @@
+name: phase29-onboarding
+
+on:
+  push:
+    paths:
+      - "app/profile/**"
+      - "app/questionnaire/**"
+      - "app/prelaunch/**"
+      - "app/http/**"
+      - "tests/test_phase29_profile_details.py"
+      - "tests/test_profile_service.py"
+      - "tests/test_prelaunch_service.py"
+      - "tests/test_questionnaire_service.py"
+      - "tests/test_partner_preferences.py"
+      - ".github/workflows/phase29-onboarding.yml"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-push.txt
+      - run: alembic upgrade head
+      - run: >
+          python -m unittest
+          tests.test_phase29_profile_details
+          tests.test_profile_service
+          tests.test_prelaunch_service
+          tests.test_questionnaire_service
+          tests.test_partner_preferences
+          tests.test_http_runtime_contract
+          -v
+      - run: python -m py_compile app/profile/service.py app/questionnaire/service.py app/prelaunch/service.py app/http/server.py
