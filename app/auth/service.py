@@ -505,6 +505,14 @@ def request_phone_login_code(
     phone = normalize_phone(phone_e164)
     _rate_limit(
         db,
+        "sms:global",
+        limit=100,
+        window_seconds=15 * 60,
+        block_seconds=15 * 60,
+        now=now,
+    )
+    _rate_limit(
+        db,
         phone_bucket(phone),
         limit=5,
         window_seconds=15 * 60,
@@ -662,6 +670,14 @@ def request_phone_link_code(
     if owner is not None and owner.id != user_id:
         raise AuthError("phone_already_linked")
 
+    _rate_limit(
+        db,
+        "sms:global",
+        limit=100,
+        window_seconds=15 * 60,
+        block_seconds=15 * 60,
+        now=now,
+    )
     _rate_limit(
         db,
         "phone-link:" + sha256_text(phone),
