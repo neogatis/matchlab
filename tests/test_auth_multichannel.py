@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.auth import service as auth
-from app.auth.oauth import VerifiedIdentity, link_identity, login_or_register_identity
+from app.auth.oauth import VerifiedIdentity, configured_audiences, link_identity, login_or_register_identity
 from app.auth.sms import MobizonSmsSender
 from app.db.models import AuthIdentity, User
 
@@ -49,6 +49,40 @@ class MultichannelAuthTests(unittest.TestCase):
                 "referrals","product_events","users"
             ]:
                 c.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+
+    def test_google_server_client_id_is_preferred(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_SERVER_CLIENT_ID": "server.apps.googleusercontent.com",
+                "GOOGLE_CLIENT_IDS": "ios.apps.googleusercontent.com,android.apps.googleusercontent.com",
+                "GOOGLE_CLIENT_ID": "legacy.apps.googleusercontent.com",
+            },
+            clear=False,
+        ):
+            self.assertEqual(
+                configured_audiences("GOOGLE"),
+                [
+                    "server.apps.googleusercontent.com",
+                    "ios.apps.googleusercontent.com",
+                    "android.apps.googleusercontent.com",
+                    "legacy.apps.googleusercontent.com",
+                ],
+            )
+
+    def test_apple_multiple_client_ids_are_supported(self):
+        with patch.dict(
+            os.environ,
+            {
+                "APPLE_CLIENT_IDS": "com.neogatis.matchlab,com.neogatis.matchlab.web",
+                "APPLE_CLIENT_ID": "",
+            },
+            clear=False,
+        ):
+            self.assertEqual(
+                configured_audiences("APPLE"),
+                ["com.neogatis.matchlab", "com.neogatis.matchlab.web"],
+            )
 
     def test_mobizon_sender_parses_success_response(self):
         sender = MobizonSmsSender(api_key="test-key")
