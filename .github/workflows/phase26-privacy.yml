@@ -1,0 +1,43 @@
+name: phase26-privacy
+
+on:
+  push:
+    paths:
+      - "app/privacy/**"
+      - "app/http/**"
+      - "scripts/process_privacy_maintenance.py"
+      - "tests/test_privacy_service.py"
+      - "legal/**"
+      - "release/store_readiness.json"
+      - "app/release/**"
+      - ".github/workflows/phase26-privacy.yml"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-photo.txt
+      - run: alembic upgrade head
+      - run: python -m unittest tests.test_privacy_service tests.test_store_readiness tests.test_http_runtime_contract tests.test_security_http -v
+      - run: python -m py_compile app/privacy/service.py app/privacy/legal.py app/http/server.py scripts/process_privacy_maintenance.py
