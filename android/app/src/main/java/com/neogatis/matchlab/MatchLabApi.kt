@@ -112,6 +112,42 @@ class MatchLabApi(context: Context) {
         return result.getLong("user_id")
     }
 
+    suspend fun registerEmail(
+        email: String,
+        password: String,
+    ): Long {
+        val result = post(
+            "/api/v1/auth/register",
+            JSONObject()
+                .put("email", email)
+                .put("password", password),
+        )
+        return result.getLong("user_id")
+    }
+
+    suspend fun requestPhoneRegistrationCode(phone: String) {
+        post(
+            "/api/v1/auth/phone/register/request",
+            JSONObject().put("phone", phone),
+        )
+    }
+
+    suspend fun verifyPhoneRegistrationCode(
+        phone: String,
+        code: String,
+        password: String,
+    ): Long {
+        val result = post(
+            "/api/v1/auth/phone/register/verify",
+            JSONObject()
+                .put("phone", phone)
+                .put("code", code)
+                .put("password", password),
+        )
+        return result.getLong("user_id")
+    }
+
+
     suspend fun requestOidcNonce(provider: String): String {
         val result = post(
             "/api/v1/auth/oidc/nonce",
