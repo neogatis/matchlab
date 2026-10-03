@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "146059226608",
+    "project_id": "matchlab-255fd",
+    "storage_bucket": "matchlab-255fd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:146059226608:android:cab85bf96b9a656e6e0135",
+        "android_client_info": {
+          "package_name": "com.neogatis.matchlab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDv6e0MGML8cHiHWlilcikxrRrLUxWjRLs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
