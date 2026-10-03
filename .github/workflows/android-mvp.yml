@@ -1,5 +1,9 @@
 name: android-mvp
 
+concurrency:
+  group: matchlab-android-debug-signing
+  cancel-in-progress: false
+
 on:
   push:
     paths:
@@ -28,7 +32,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: matchlab-android-debug-keystore-v1
+          key: matchlab-android-debug-keystore-v3-stable
 
       - name: Build debug APK
         run: gradle -p android :app:assembleDebug --no-daemon
