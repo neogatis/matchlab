@@ -41,7 +41,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Market, Photo, Profile, PushDevice, User
+from app.db.models import AuthIdentity, Market, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.console.web import photo_moderation_html
@@ -66,6 +66,7 @@ from app.push.service import (
     PushError,
     disable_device,
     dispatch_pending,
+    enqueue_notification,
     register_device,
 )
 from app.push.storage import S3PushTokenVault
@@ -1198,12 +1199,33 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     actor=f"user:{principal.user_id}",
                     reason=str(body.get("reason", "")),
                 )
+                kind = (
+                    "PHOTO_APPROVED"
+                    if photo.moderation_status == "APPROVED"
+                    else "PHOTO_REJECTED"
+                )
+                notification = Notification(
+                    user_id=photo.user_id,
+                    kind=kind,
+                    text=(
+                        "Фото одобрено."
+                        if kind == "PHOTO_APPROVED"
+                        else "Фото отклонено. Проверьте статус фото в профиле."
+                    ),
+                )
+                db.add(notification)
+                db.flush()
+                enqueue_notification(
+                    db,
+                    notification_id=notification.id,
+                )
                 self._send_json(
                     HTTPStatus.OK,
                     {
                         "id": photo.id,
                         "user_id": photo.user_id,
                         "moderation_status": photo.moderation_status,
+                        "notification_id": notification.id,
                     },
                 )
                 return
