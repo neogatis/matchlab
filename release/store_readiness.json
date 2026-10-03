@@ -57,6 +57,8 @@
   "auth": {
     "phone_otp_production": true,
     "google_server_client_id_configured": true,
-    "apple_client_id_configured": false
+    "apple_client_id_configured": false,
+    "google_ios_client_id_configured": true,
+    "google_android_client_id_configured": false
   }
 }
