@@ -104,6 +104,11 @@ from app.profile.service import (
     set_relationship_state,
     upsert_basic_profile,
 )
+from app.questionnaire.adaptive import (
+    AdaptiveQuestionnaireError,
+    answer as adaptive_questionnaire_answer,
+    state as adaptive_questionnaire_state,
+)
 from app.questionnaire.service import (
     InvalidAnswer,
     QuestionnaireError,
@@ -346,7 +351,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/33"
+    server_version = "MatchLab/34"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -442,7 +447,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 33,
+                        "phase": 34,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -1098,6 +1103,37 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     offline=str(body.get("offline", "")),
                 )
                 self._send_json(HTTPStatus.OK, {"readiness_score": row.readiness_score})
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/questionnaire/adaptive":
+                self._send_json(
+                    HTTPStatus.OK,
+                    adaptive_questionnaire_state(
+                        db,
+                        user_id=principal.user_id,
+                    ),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/questionnaire/adaptive/answer":
+                body = self._body()
+                token = str(body.get("question_token", ""))
+                try:
+                    value = int(body.get("value"))
+                except (TypeError, ValueError) as exc:
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid_adaptive_answer",
+                    ) from exc
+                self._send_json(
+                    HTTPStatus.OK,
+                    adaptive_questionnaire_answer(
+                        db,
+                        user_id=principal.user_id,
+                        question_token=token,
+                        value=value,
+                    ),
+                )
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/questionnaire":
