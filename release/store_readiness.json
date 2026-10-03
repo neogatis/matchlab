@@ -21,12 +21,14 @@
       "billing_verification_production": false
     },
     "android": {
-      "native_client_present": false,
+      "native_client_present": true,
       "application_id": "com.neogatis.matchlab",
       "release_pipeline_present": false,
       "google_sign_in_production": false,
       "push_delivery_production": false,
-      "billing_verification_production": false
+      "billing_verification_production": false,
+      "debug_build_pipeline_present": true,
+      "debug_signing_sha1": "EF:73:1B:AF:97:46:D6:4D:D7:5C:9A:C6:9B:43:E5:B9:73:09:32:26"
     }
   },
   "public_runtime": {
