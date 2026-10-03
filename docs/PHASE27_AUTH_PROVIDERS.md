@@ -77,8 +77,14 @@ The server issues a one-time nonce before native authentication. It verifies:
 
 Required audiences:
 
-- `GOOGLE_CLIENT_ID`
-- `APPLE_CLIENT_ID`
+- `GOOGLE_SERVER_CLIENT_ID` — Web/server OAuth client used as the ID-token audience by both mobile clients;
+- `GOOGLE_CLIENT_IDS` — optional comma-separated extra audiences;
+- `APPLE_CLIENT_IDS` — comma-separated Apple App ID / Services ID audiences.
+
+Reserved native identifiers:
+
+- iOS bundle ID: `com.neogatis.matchlab`
+- Android application ID: `com.neogatis.matchlab`
 
 Apple and Google identities are keyed by provider + immutable subject, not by display name.
 
@@ -108,8 +114,8 @@ Store-readiness flags for Google Sign-In and Sign in with Apple therefore remain
 ## Next
 
 1. add SMS provider credentials and run a real phone OTP smoke test;
-2. create Google OAuth client IDs and add the native client ID to Railway;
-3. create the Apple App ID / Sign in with Apple capability and configure the audience;
+2. create a Google Web/server OAuth client plus platform clients; add the server client ID to Railway as `GOOGLE_SERVER_CLIENT_ID`;
+3. register Apple App ID `com.neogatis.matchlab`, enable Sign in with Apple, and add it to Railway as `APPLE_CLIENT_IDS`;
 4. build native iOS/Android auth screens;
 5. run provider-specific production login/link tests;
 6. only then mark Apple/Google production readiness true.
