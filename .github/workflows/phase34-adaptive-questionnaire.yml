@@ -1,0 +1,52 @@
+name: phase34-adaptive-questionnaire
+
+on:
+  push:
+    paths:
+      - "app/questionnaire/**"
+      - "app/matching/**"
+      - "app/db/models.py"
+      - "app/http/**"
+      - "alembic/versions/b7e4c2d19a34_phase34_adaptive_questionnaire.py"
+      - "tests/test_phase34_adaptive_questionnaire.py"
+      - ".github/workflows/phase34-adaptive-questionnaire.yml"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-push.txt
+      - run: alembic upgrade head
+      - run: >
+          python -m unittest
+          tests.test_phase34_adaptive_questionnaire
+          tests.test_questionnaire_service
+          tests.test_matching_service
+          tests.test_http_runtime_contract
+          -v
+      - run: >
+          python -m py_compile
+          app/questionnaire/adaptive.py
+          app/matching/service.py
+          app/http/server.py
