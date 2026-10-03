@@ -60,5 +60,11 @@
     "apple_client_id_configured": false,
     "google_ios_client_id_configured": true,
     "google_android_client_id_configured": false
+  },
+  "push": {
+    "token_vault_production": true,
+    "fcm_backend_runtime": true,
+    "fcm_credentials_configured": false,
+    "apns_credentials_configured": false
   }
 }
