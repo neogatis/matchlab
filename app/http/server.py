@@ -41,7 +41,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Photo, PushDevice, User
+from app.db.models import AuthIdentity, Market, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.photos.service import (
@@ -91,6 +91,8 @@ from app.profile.service import (
     MarketUnavailable,
     ProfileError,
     UnderageUser,
+    profile_completion_state,
+    set_match_profile_details,
     set_readiness,
     set_relationship_state,
     upsert_basic_profile,
@@ -98,6 +100,7 @@ from app.profile.service import (
 from app.questionnaire.service import (
     InvalidAnswer,
     QuestionnaireError,
+    answers_for_user as questionnaire_answers,
     progress as questionnaire_progress,
     save_answers,
     sections as questionnaire_sections,
@@ -336,7 +339,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/28"
+    server_version = "MatchLab/29"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -432,7 +435,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 28,
+                        "phase": 29,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -792,6 +795,133 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {"ok": True})
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/profile/me":
+                profile = db.get(Profile, principal.user_id)
+                if profile is None:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {
+                            "profile": None,
+                            "completion": profile_completion_state(None),
+                        },
+                    )
+                    return
+
+                market = (
+                    db.get(Market, profile.market_id)
+                    if profile.market_id is not None
+                    else None
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "profile": {
+                            "user_id": profile.user_id,
+                            "display_name": profile.display_name,
+                            "dob": profile.dob,
+                            "gender": profile.gender,
+                            "seek_gender": profile.seek_gender,
+                            "market_code": market.code if market else None,
+                            "city": profile.city,
+                            "country_code": profile.country_code,
+                            "preferred_locale": profile.preferred_locale,
+                            "relationship_status": profile.relationship_status,
+                            "eligibility_status": profile.eligibility_status,
+                            "dating_goal": profile.dating_goal,
+                            "readiness_chat": profile.readiness_chat,
+                            "readiness_offline": profile.readiness_offline,
+                            "readiness_score": profile.readiness_score,
+                            "bio": profile.bio,
+                            "height": profile.height,
+                            "smoking": profile.smoking,
+                            "alcohol": profile.alcohol,
+                            "lifestyle": profile.lifestyle,
+                            "religion": profile.religion,
+                            "nationality": profile.nationality,
+                            "children_status": profile.children_status,
+                            "children_plans": profile.children_plans,
+                        },
+                        "completion": profile_completion_state(profile),
+                    },
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/onboarding":
+                profile = db.get(Profile, principal.user_id)
+                completion = profile_completion_state(profile)
+                response: dict[str, Any] = {
+                    "completion": completion,
+                    "questionnaire": {
+                        "progress": questionnaire_progress(
+                            db,
+                            user_id=principal.user_id,
+                        ),
+                        "answers": (
+                            questionnaire_answers(
+                                db,
+                                user_id=principal.user_id,
+                            )
+                            if profile is not None
+                            else {}
+                        ),
+                    },
+                    "preferences": get_preferences(
+                        db,
+                        user_id=principal.user_id,
+                    ),
+                    "photos": (
+                        photo_progress(db, user_id=principal.user_id)
+                        if profile is not None
+                        else {
+                            "approved": 0,
+                            "approved_main": False,
+                            "complete": False,
+                        }
+                    ),
+                }
+                if profile is not None:
+                    market = (
+                        db.get(Market, profile.market_id)
+                        if profile.market_id is not None
+                        else None
+                    )
+                    response["profile"] = {
+                        "display_name": profile.display_name,
+                        "dob": profile.dob,
+                        "gender": profile.gender,
+                        "seek_gender": profile.seek_gender,
+                        "market_code": market.code if market else None,
+                        "relationship_status": profile.relationship_status,
+                        "eligibility_status": profile.eligibility_status,
+                        "dating_goal": profile.dating_goal,
+                        "readiness_chat": profile.readiness_chat,
+                        "readiness_offline": profile.readiness_offline,
+                        "readiness_score": profile.readiness_score,
+                        "height": profile.height,
+                        "children_status": profile.children_status,
+                        "children_plans": profile.children_plans,
+                        "smoking": profile.smoking,
+                        "alcohol": profile.alcohol,
+                        "lifestyle": profile.lifestyle,
+                        "bio": profile.bio,
+                        "religion": profile.religion,
+                        "nationality": profile.nationality,
+                    }
+                    response["waitlist"] = waitlist_status(
+                        db,
+                        user_id=principal.user_id,
+                    )
+                else:
+                    response["profile"] = None
+                    response["waitlist"] = {
+                        "state": "NEEDS_BASIC_PROFILE",
+                        "ready": False,
+                        "completion": completion,
+                        "message": "Заполните базовый профиль.",
+                    }
+                self._send_json(HTTPStatus.OK, response)
+                return
+
             if method == "POST" and path == f"{API_PREFIX}/profile/basic":
                 body = self._body()
                 dob = date.fromisoformat(str(body.get("dob", "")))
@@ -806,6 +936,38 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     preferred_locale=body.get("preferred_locale"),
                 )
                 self._send_json(HTTPStatus.OK, {"ok": True, "user_id": row.user_id})
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/profile/details":
+                body = self._body()
+                try:
+                    height = int(body.get("height"))
+                except (TypeError, ValueError) as exc:
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid_height",
+                    ) from exc
+                row = set_match_profile_details(
+                    db,
+                    user_id=principal.user_id,
+                    height=height,
+                    dating_goal=str(body.get("dating_goal", "")),
+                    children_status=str(body.get("children_status", "")),
+                    children_plans=str(body.get("children_plans", "")),
+                    smoking=str(body.get("smoking", "")),
+                    alcohol=str(body.get("alcohol", "")),
+                    lifestyle=str(body.get("lifestyle", "")),
+                    bio=str(body.get("bio", "")),
+                    religion=str(body.get("religion", "")),
+                    nationality=str(body.get("nationality", "")),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "completion": profile_completion_state(row),
+                    },
+                )
                 return
 
             if method == "POST" and path == f"{API_PREFIX}/profile/relationship":
@@ -843,6 +1005,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     {
                         "sections": questionnaire_sections(db),
                         "progress": questionnaire_progress(db, user_id=principal.user_id),
+                        "answers": questionnaire_answers(db, user_id=principal.user_id),
                     },
                 )
                 return
