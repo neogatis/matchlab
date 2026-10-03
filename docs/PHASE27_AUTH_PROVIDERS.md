@@ -34,11 +34,18 @@ Phone numbers are normalized to E.164. OTP codes:
 
 The database stores the verified E.164 number on the user and a hashed PHONE identity subject in `auth_identities`.
 
-## SMS provider
+## SMS providers
 
-Initial production adapter: Twilio.
+Preferred Kazakhstan adapter: Mobizon.
 
 Required variables:
+
+- `SMS_PROVIDER=mobizon`
+- `MOBIZON_API_KEY`
+- optional `MOBIZON_SENDER`
+- optional `MOBIZON_API_BASE` (defaults to `https://api.mobizon.kz`)
+
+Twilio remains available as a fallback with:
 
 - `SMS_PROVIDER=twilio`
 - `TWILIO_ACCOUNT_SID`
