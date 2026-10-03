@@ -1,10 +1,15 @@
+import json
 import unittest
+from pathlib import Path
 
 from app.release import (
     REQUIRED_CAPABILITIES,
     current_matchlab_readiness,
     evaluate_store_readiness,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class StoreReadinessTests(unittest.TestCase):
@@ -39,6 +44,25 @@ class StoreReadinessTests(unittest.TestCase):
         result=current_matchlab_readiness()
         self.assertIn("photo_moderation",result.completed)
         self.assertIn("block_and_report",result.completed)
+
+    def test_manifest_matches_fail_closed_readiness(self):
+        manifest=json.loads(
+            (ROOT/"release"/"store_readiness.json").read_text(encoding="utf-8")
+        )
+        result=current_matchlab_readiness()
+        self.assertEqual(bool(manifest["submission_ready"]),result.ready)
+        self.assertEqual(manifest["minimum_age"],18)
+        self.assertEqual(manifest["plans"],["FREE","PREMIUM","PREMIUM_PLUS"])
+        self.assertIn("DEEP_COMPATIBILITY_REPORT",manifest["one_time_products"])
+
+    def test_native_clients_are_explicitly_not_claimed(self):
+        manifest=json.loads(
+            (ROOT/"release"/"store_readiness.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(manifest["platforms"]["ios"]["native_client_present"])
+        self.assertFalse(manifest["platforms"]["android"]["native_client_present"])
+        self.assertIsNone(manifest["platforms"]["ios"]["bundle_id"])
+        self.assertIsNone(manifest["platforms"]["android"]["application_id"])
 
 
 if __name__=="__main__":
