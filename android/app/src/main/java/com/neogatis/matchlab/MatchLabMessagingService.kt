@@ -3,6 +3,7 @@ package com.neogatis.matchlab
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -32,13 +33,15 @@ class MatchLabMessagingService : FirebaseMessagingService() {
         val channelId = "matchlab-default"
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        manager.createNotificationChannel(
-            NotificationChannel(
-                channelId,
-                "MatchLab",
-                NotificationManager.IMPORTANCE_DEFAULT,
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    channelId,
+                    "MatchLab",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                )
             )
-        )
+        }
 
         val title = message.notification?.title ?: "MatchLab"
         val body = message.notification?.body ?: "У вас новое уведомление"
