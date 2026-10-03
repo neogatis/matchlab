@@ -15,6 +15,13 @@ class SmsError(Exception):
     pass
 
 
+def _env_value(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    return value
+
+
 def normalize_phone(value: str, *, default_region: str = "KZ") -> str:
     raw = (value or "").strip()
     try:
@@ -59,10 +66,10 @@ class TwilioSmsSender(SmsSender):
     @classmethod
     def from_env(cls) -> "TwilioSmsSender":
         return cls(
-            account_sid=os.environ.get("TWILIO_ACCOUNT_SID", "").strip(),
-            auth_token=os.environ.get("TWILIO_AUTH_TOKEN", "").strip(),
-            from_number=os.environ.get("TWILIO_FROM_NUMBER", "").strip() or None,
-            messaging_service_sid=os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "").strip() or None,
+            account_sid=_env_value("TWILIO_ACCOUNT_SID"),
+            auth_token=_env_value("TWILIO_AUTH_TOKEN"),
+            from_number=_env_value("TWILIO_FROM_NUMBER") or None,
+            messaging_service_sid=_env_value("TWILIO_MESSAGING_SERVICE_SID") or None,
         )
 
     def send_otp(self, *, phone_e164: str, code: str) -> SmsSendResult:
@@ -105,8 +112,78 @@ class TwilioSmsSender(SmsSender):
         return SmsSendResult(provider="TWILIO", message_id=payload.get("sid"))
 
 
+class MobizonSmsSender(SmsSender):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        sender: str | None = None,
+        api_base: str = "https://api.mobizon.kz",
+    ):
+        if not api_key:
+            raise SmsError("mobizon_api_key_missing")
+        self.api_key = api_key
+        self.sender = sender
+        self.api_base = api_base.rstrip("/")
+
+    @classmethod
+    def from_env(cls) -> "MobizonSmsSender":
+        return cls(
+            api_key=_env_value("MOBIZON_API_KEY"),
+            sender=_env_value("MOBIZON_SENDER") or None,
+            api_base=_env_value("MOBIZON_API_BASE") or "https://api.mobizon.kz",
+        )
+
+    def send_otp(self, *, phone_e164: str, code: str) -> SmsSendResult:
+        params = urllib.parse.urlencode(
+            {
+                "output": "json",
+                "api": "v1",
+                "apiKey": self.api_key,
+            }
+        )
+        url = self.api_base + "/service/message/sendSmsMessage?" + params
+        form = {
+            "recipient": phone_e164.lstrip("+"),
+            "text": f"MatchLab: код входа {code}. Никому не сообщайте этот код.",
+            "params[validity]": "60",
+        }
+        if self.sender:
+            form["from"] = self.sender
+
+        request = urllib.request.Request(
+            url,
+            data=urllib.parse.urlencode(form).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read(1024).decode("utf-8", errors="replace")
+            raise SmsError(f"mobizon_send_failed:{exc.code}:{detail}") from exc
+        except Exception as exc:
+            raise SmsError("mobizon_send_failed") from exc
+
+        if int(payload.get("code", -1)) != 0:
+            raise SmsError(
+                "mobizon_send_failed:"
+                + str(payload.get("code"))
+                + ":"
+                + str(payload.get("message") or "")
+            )
+        data = payload.get("data") or {}
+        return SmsSendResult(
+            provider="MOBIZON",
+            message_id=str(data.get("messageId")) if data.get("messageId") is not None else None,
+        )
+
+
 def sms_sender_from_env() -> SmsSender:
-    provider = os.environ.get("SMS_PROVIDER", "twilio").strip().lower()
+    provider = _env_value("SMS_PROVIDER").lower() or "mobizon"
+    if provider == "mobizon":
+        return MobizonSmsSender.from_env()
     if provider == "twilio":
         return TwilioSmsSender.from_env()
     raise SmsError("unsupported_sms_provider")
