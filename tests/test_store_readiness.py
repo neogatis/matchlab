@@ -34,12 +34,10 @@ class StoreReadinessTests(unittest.TestCase):
     def test_current_project_does_not_claim_store_ready(self):
         result=current_matchlab_readiness()
         self.assertFalse(result.ready)
-        self.assertIn("postgres_http_runtime",result.blockers)
-        self.assertIn("secure_http_boundary",result.blockers)
         self.assertIn("ios_build_pipeline",result.blockers)
         self.assertIn("android_build_pipeline",result.blockers)
-        self.assertIn("privacy_policy_url",result.blockers)
-        self.assertIn("terms_url",result.blockers)
+        self.assertIn("push_provider_delivery",result.blockers)
+        self.assertIn("billing_provider_verification",result.blockers)
 
     def test_existing_safety_foundations_are_recognized(self):
         result=current_matchlab_readiness()
@@ -51,6 +49,14 @@ class StoreReadinessTests(unittest.TestCase):
         self.assertIn("account_deletion_flow",result.completed)
         self.assertIn("data_export_flow",result.completed)
         self.assertIn("retention_policy",result.completed)
+
+    def test_production_cutover_foundations_are_recognized(self):
+        result=current_matchlab_readiness()
+        self.assertIn("postgres_http_runtime",result.completed)
+        self.assertIn("secure_http_boundary",result.completed)
+        self.assertIn("privacy_policy_url",result.completed)
+        self.assertIn("terms_url",result.completed)
+        self.assertIn("photo_object_storage",result.completed)
 
     def test_manifest_matches_fail_closed_readiness(self):
         manifest=json.loads(
