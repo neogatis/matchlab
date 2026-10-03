@@ -967,3 +967,14 @@ def adaptive_category_scores(
         if values and weights:
             result[category] = int(round(sum(values) / sum(weights)))
     return result
+
+
+def has_adaptive_answers(db: Session, *, user_id: int) -> bool:
+    return bool(
+        db.scalar(
+            select(func.count())
+            .select_from(AdaptiveQuestionnaireAnswer)
+            .where(AdaptiveQuestionnaireAnswer.user_id == user_id)
+        )
+        or 0
+    )
