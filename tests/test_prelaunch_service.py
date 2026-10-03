@@ -59,6 +59,10 @@ class PrelaunchServiceTests(unittest.TestCase):
             eligibility_status="ACTIVE_FOR_MATCHING",profile_completed=True,
             questionnaire_completed=True,partner_preferences_completed=True,
             photos_completed=True,readiness_score=90,
+            readiness_chat="YES",readiness_offline="YES",
+            height=175,dating_goal="SERIOUS",children_status="NO_CHILDREN",
+            children_plans="MAYBE",smoking="NO",alcohol="RARE",
+            lifestyle="BALANCED",
         ))
         for qid in self.question_ids:
             db.add(QuestionnaireAnswer(user_id=user.id,question_id=qid,value_int=answer))
