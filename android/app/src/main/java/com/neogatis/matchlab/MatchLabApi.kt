@@ -81,12 +81,33 @@ class MatchLabApi(context: Context) {
         )
     }
 
-    suspend fun verifyPhoneCode(phone: String, code: String): Long {
+    suspend fun verifyPhoneCode(
+        phone: String,
+        code: String,
+        newPassword: String? = null,
+    ): Long {
+        val payload = JSONObject()
+            .put("phone", phone)
+            .put("code", code)
+        if (!newPassword.isNullOrBlank()) {
+            payload.put("password", newPassword)
+        }
         val result = post(
             "/api/v1/auth/phone/verify",
+            payload,
+        )
+        return result.getLong("user_id")
+    }
+
+    suspend fun loginWithPassword(
+        identifier: String,
+        password: String,
+    ): Long {
+        val result = post(
+            "/api/v1/auth/login",
             JSONObject()
-                .put("phone", phone)
-                .put("code", code),
+                .put("identifier", identifier)
+                .put("password", password),
         )
         return result.getLong("user_id")
     }
