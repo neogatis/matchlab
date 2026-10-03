@@ -2,24 +2,27 @@ package com.neogatis.matchlab
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.lifecycleScope
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.messaging.FirebaseMessaging
-import com.google.android.gms.common.ConnectionResult
-import com.google.android.gms.common.GoogleApiAvailability
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -32,70 +35,169 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         api = MatchLabApi(this)
 
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(MatchLabStyle.color(MatchLabStyle.BG))
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 72, 48, 48)
+            setPadding(
+                MatchLabStyle.dp(this@MainActivity, 24),
+                MatchLabStyle.dp(this@MainActivity, 36),
+                MatchLabStyle.dp(this@MainActivity, 24),
+                MatchLabStyle.dp(this@MainActivity, 40),
+            )
         }
+        scroll.addView(root)
+
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        brandRow.addView(TextView(this).apply {
+            text = "♡"
+            textSize = 42f
+            setTextColor(MatchLabStyle.color(MatchLabStyle.CORAL))
+            typeface = Typeface.create("sans", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, MatchLabStyle.dp(this@MainActivity, 8), 0)
+        })
+        brandRow.addView(TextView(this).apply {
+            text = MatchLabStyle.brandText()
+            textSize = 34f
+            typeface = Typeface.create("sans", Typeface.BOLD)
+        })
+        root.addView(brandRow)
 
         root.addView(TextView(this).apply {
-            text = "MatchLab"
-            textSize = 32f
+            text = "Не выбирай из всех.\nНайди подходящего."
+            MatchLabStyle.title(this)
+            textSize = 31f
+            setPadding(0, MatchLabStyle.dp(this@MainActivity, 28), 0, 0)
         })
 
         root.addView(TextView(this).apply {
-            text = "Вход в ранний доступ"
-            textSize = 18f
-            setPadding(0, 8, 0, 32)
+            text = "Совместимость. Общие ценности. Серьёзные намерения."
+            MatchLabStyle.subtitle(this)
+            textSize = 16f
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@MainActivity, 10),
+                0,
+                MatchLabStyle.dp(this@MainActivity, 22),
+            )
+        })
+
+        val valueCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                MatchLabStyle.dp(this@MainActivity, 18),
+                MatchLabStyle.dp(this@MainActivity, 18),
+                MatchLabStyle.dp(this@MainActivity, 18),
+                MatchLabStyle.dp(this@MainActivity, 18),
+            )
+        }
+        MatchLabStyle.card(valueCard)
+        addTrustItem(valueCard, "♡", "Глубокая совместимость", "Ценности, характер и жизненные планы")
+        addTrustItem(valueCard, "◎", "Настоящие люди", "Качественные анкеты и модерация")
+        addTrustItem(valueCard, "♥", "Серьёзные намерения", "Не свайпы, а релевантный подбор")
+        root.addView(valueCard)
+        MatchLabStyle.withMargins(valueCard, top = 4, bottom = 20)
+
+        val authCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                MatchLabStyle.dp(this@MainActivity, 18),
+                MatchLabStyle.dp(this@MainActivity, 20),
+                MatchLabStyle.dp(this@MainActivity, 18),
+                MatchLabStyle.dp(this@MainActivity, 20),
+            )
+        }
+        MatchLabStyle.card(authCard)
+
+        authCard.addView(TextView(this).apply {
+            text = "Войти в MatchLab"
+            setTextColor(MatchLabStyle.color(MatchLabStyle.NAVY))
+            textSize = 21f
+            typeface = Typeface.create("serif", Typeface.BOLD)
+        })
+        authCard.addView(TextView(this).apply {
+            text = "Получите одноразовый код по SMS"
+            MatchLabStyle.subtitle(this)
+            setPadding(0, MatchLabStyle.dp(this@MainActivity, 5), 0, MatchLabStyle.dp(this@MainActivity, 14))
         })
 
         val phoneInput = EditText(this).apply {
             hint = "+7 747 123 45 67"
             inputType = InputType.TYPE_CLASS_PHONE
+            MatchLabStyle.input(this)
         }
-        root.addView(phoneInput)
+        authCard.addView(phoneInput)
 
         val sendCodeButton = Button(this).apply {
-            text = "Получить код"
+            text = "Получить код  →"
+            MatchLabStyle.primaryButton(this)
         }
-        root.addView(sendCodeButton)
+        authCard.addView(sendCodeButton)
+        MatchLabStyle.withMargins(sendCodeButton, top = 12)
 
         codeInput = EditText(this).apply {
             hint = "6-значный код"
             inputType = InputType.TYPE_CLASS_NUMBER
             visibility = View.GONE
+            MatchLabStyle.input(this)
         }
-        root.addView(codeInput)
+        authCard.addView(codeInput)
+        MatchLabStyle.withMargins(codeInput, top = 14)
 
         verifyButton = Button(this).apply {
-            text = "Войти"
+            text = "Войти  →"
             visibility = View.GONE
+            MatchLabStyle.primaryButton(this)
         }
-        root.addView(verifyButton)
+        authCard.addView(verifyButton)
+        MatchLabStyle.withMargins(verifyButton, top = 12)
 
-        root.addView(TextView(this).apply {
+        authCard.addView(TextView(this).apply {
             text = "или"
-            textSize = 15f
-            gravity = android.view.Gravity.CENTER
-            setPadding(0, 24, 0, 16)
+            MatchLabStyle.subtitle(this)
+            gravity = Gravity.CENTER
+            setPadding(0, MatchLabStyle.dp(this@MainActivity, 18), 0, MatchLabStyle.dp(this@MainActivity, 10))
         })
 
         val googleButton = Button(this).apply {
             text = "Продолжить с Google"
+            MatchLabStyle.secondaryButton(this)
         }
-        root.addView(googleButton)
+        authCard.addView(googleButton)
 
         status = TextView(this).apply {
-            textSize = 15f
-            setPadding(0, 32, 0, 0)
+            MatchLabStyle.status(this)
+            visibility = View.GONE
         }
-        root.addView(status)
+        authCard.addView(status)
+        MatchLabStyle.withMargins(status, top = 14)
 
-        setContentView(root)
+        root.addView(authCard)
+
+        root.addView(TextView(this).apply {
+            text = "Больше, чем знакомства.\nЛюди, которые действительно подходят."
+            MatchLabStyle.subtitle(this)
+            gravity = Gravity.CENTER
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@MainActivity, 22),
+                0,
+                0,
+            )
+        })
+
+        setContentView(scroll)
 
         sendCodeButton.setOnClickListener {
             val phone = phoneInput.text.toString().trim()
             if (phone.isBlank()) {
-                status.text = "Введите номер телефона."
+                showStatus("Введите номер телефона.")
                 return@setOnClickListener
             }
             lifecycleScope.launch {
@@ -103,12 +205,12 @@ class MainActivity : AppCompatActivity() {
                 runCatching {
                     api.requestPhoneCode(phone)
                 }.onSuccess {
-                    status.text = "Код отправлен. Введите 6 цифр из SMS."
+                    showStatus("Код отправлен. Введите 6 цифр из SMS.")
                     codeInput.visibility = View.VISIBLE
                     verifyButton.visibility = View.VISIBLE
                     codeInput.requestFocus()
                 }.onFailure {
-                    status.text = "Ошибка отправки: ${it.message}"
+                    showStatus("Ошибка отправки: " + it.message)
                 }
             }
         }
@@ -123,7 +225,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "телефон")
                 }.onFailure {
-                    status.text = "Ошибка входа: ${it.message}"
+                    showStatus("Ошибка входа: " + it.message)
                 }
             }
         }
@@ -132,8 +234,10 @@ class MainActivity : AppCompatActivity() {
             val playServices = GoogleApiAvailability.getInstance()
                 .isGooglePlayServicesAvailable(this)
             if (playServices != ConnectionResult.SUCCESS) {
-                status.text = "Google Play Services недоступны в этом Android-окружении. " +
-                    "Вход по телефону работает; для Google и FCM нужен Android/эмулятор с Google Play."
+                showStatus(
+                    "Google Play Services недоступны в этом Android-окружении. " +
+                        "Вход по телефону работает."
+                )
                 return@setOnClickListener
             }
 
@@ -146,7 +250,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "Google")
                 }.onFailure {
-                    status.text = "Ошибка Google Sign-In: ${it.message}"
+                    showStatus("Ошибка Google Sign-In: " + it.message)
                 }
             }
         }
@@ -155,15 +259,54 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 runCatching { api.listAuthMethods() }
                     .onSuccess {
-                        status.text = "Сессия восстановлена."
+                        showStatus("Сессия восстановлена.")
                         registerPush()
                         openOnboarding()
                     }
                     .onFailure {
-                        status.text = "Нужно войти снова."
+                        showStatus("Нужно войти снова.")
                     }
             }
         }
+    }
+
+    private fun addTrustItem(
+        container: LinearLayout,
+        icon: String,
+        title: String,
+        subtitle: String,
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, MatchLabStyle.dp(this@MainActivity, 8), 0, MatchLabStyle.dp(this@MainActivity, 8))
+        }
+        row.addView(TextView(this).apply {
+            text = icon
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(MatchLabStyle.color(MatchLabStyle.CORAL))
+            background = MatchLabStyle.rounded(MatchLabStyle.SURFACE_SOFT, 20)
+            val size = MatchLabStyle.dp(this@MainActivity, 44)
+            layoutParams = LinearLayout.LayoutParams(size, size)
+        })
+        val copy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(MatchLabStyle.dp(this@MainActivity, 12), 0, 0, 0)
+        }
+        copy.addView(TextView(this).apply {
+            text = title
+            setTextColor(MatchLabStyle.color(MatchLabStyle.NAVY))
+            textSize = 15f
+            typeface = Typeface.create("sans", Typeface.BOLD)
+        })
+        copy.addView(TextView(this).apply {
+            text = subtitle
+            MatchLabStyle.subtitle(this)
+            textSize = 13f
+        })
+        row.addView(copy)
+        container.addView(row)
     }
 
     private suspend fun googleIdToken(nonce: String): String {
@@ -197,7 +340,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onAuthenticated(userId: Long, method: String) {
-        status.text = "Вход выполнен через $method. User ID: $userId"
+        showStatus("Вход выполнен через " + method + ".")
         requestNotificationPermission()
         registerPush()
         openOnboarding()
@@ -213,18 +356,8 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     runCatching {
                         api.registerPushToken(token)
-                    }.onSuccess { deviceId ->
-                        status.text = status.text.toString() +
-                            "\nPush подключён. Device ID: $deviceId"
-                    }.onFailure {
-                        status.text = status.text.toString() +
-                            "\nНе удалось зарегистрировать push: ${it.message}"
                     }
                 }
-            }
-            .addOnFailureListener {
-                status.text = status.text.toString() +
-                    "\nНе удалось получить FCM token: ${it.message}"
             }
     }
 
@@ -238,6 +371,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setBusy(message: String) {
+        showStatus(message)
+    }
+
+    private fun showStatus(message: String) {
         status.text = message
+        status.visibility = View.VISIBLE
     }
 }
