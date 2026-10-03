@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 
@@ -118,6 +119,7 @@ class S3PhotoStorage:
             endpoint_url=endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
+            config=Config(s3={"addressing_style": "path"}),
         )
         return cls(client, bucket)
 
