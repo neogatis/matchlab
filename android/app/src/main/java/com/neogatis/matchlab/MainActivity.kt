@@ -17,6 +17,8 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -126,6 +128,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         googleButton.setOnClickListener {
+            val playServices = GoogleApiAvailability.getInstance()
+                .isGooglePlayServicesAvailable(this)
+            if (playServices != ConnectionResult.SUCCESS) {
+                status.text = "Google Play Services недоступны в этом Android-окружении. " +
+                    "Вход по телефону работает; для Google и FCM нужен Android/эмулятор с Google Play."
+                return@setOnClickListener
+            }
+
             lifecycleScope.launch {
                 setBusy("Открываем Google…")
                 runCatching {
@@ -135,7 +145,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "Google")
                 }.onFailure {
-                    status.text = "Google пока не завершён: ${it.message}"
+                    status.text = "Ошибка Google Sign-In: ${it.message}"
                 }
             }
         }
