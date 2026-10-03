@@ -448,6 +448,11 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "service": "matchlab",
                         "runtime": "postgres-http",
                         "phase": 34,
+                        "adaptive_questionnaire": True,
+                        "openai_adaptive_configured": bool(
+                            os.environ.get("OPENAI_API_KEY", "").strip()
+                            and os.environ.get("OPENAI_ADAPTIVE_MODEL", "").strip()
+                        ),
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
