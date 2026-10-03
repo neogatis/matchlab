@@ -42,7 +42,7 @@ jobs:
           python -m unittest
           tests.test_phase34_adaptive_questionnaire
           tests.test_questionnaire_service
-          tests.test_matching_service
+          tests.test_matching_baseline tests.test_matching_engine_v1
           tests.test_http_runtime_contract
           -v
       - run: >
