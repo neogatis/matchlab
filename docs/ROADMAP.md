@@ -45,3 +45,7 @@ Git source deployment
 25. **Phase 25 — Production photo storage**: private signed uploads, image sanitation/EXIF removal, photo HTTP APIs and moderator review.
 
 Next: production deployment evidence, deletion worker, privacy/delete/export, then native client work.
+
+26. **Phase 26 — Privacy / deletion / export / retention**: self-service export and deletion, external web deletion path, pseudonymous purge, legal pages and enforced cleanup windows.
+
+Next: production cutover evidence and scheduled workers; then provider auth/push/billing and native clients.
