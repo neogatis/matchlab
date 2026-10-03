@@ -1,12 +1,15 @@
 package com.neogatis.matchlab
 
+import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -30,6 +33,8 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var scroll: ScrollView
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
+    private var currentStep: Int = 1
+    private val totalSteps: Int = 7
 
     private val photoPicker = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -67,10 +72,18 @@ class OnboardingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         api = MatchLabApi(this)
 
-        scroll = ScrollView(this)
+        scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(MatchLabStyle.color(MatchLabStyle.BG))
+        }
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 52, 48, 72)
+            setPadding(
+                MatchLabStyle.dp(this@OnboardingActivity, 24),
+                MatchLabStyle.dp(this@OnboardingActivity, 26),
+                MatchLabStyle.dp(this@OnboardingActivity, 24),
+                MatchLabStyle.dp(this@OnboardingActivity, 56),
+            )
         }
         scroll.addView(root)
         setContentView(scroll)
@@ -98,34 +111,105 @@ class OnboardingActivity : AppCompatActivity() {
     private fun renderNextStep(state: JSONObject) {
         val completion = state.getJSONObject("completion")
         when {
-            !completion.optBoolean("basic") -> renderBasic(state)
-            !completion.optBoolean("relationship") -> renderRelationship()
-            !completion.optBoolean("readiness") -> renderReadiness()
-            !completion.optBoolean("details") -> renderDetails(state)
-            !completion.optBoolean("questionnaire") -> renderQuestionnaire()
-            !completion.optBoolean("partner_preferences") -> renderPreferences(state)
-            !completion.optBoolean("photos") -> renderPhotos(state)
-            else -> renderWaitlist(state)
+            !completion.optBoolean("basic") -> {
+                currentStep = 1
+                renderBasic(state)
+            }
+            !completion.optBoolean("relationship") -> {
+                currentStep = 2
+                renderRelationship()
+            }
+            !completion.optBoolean("readiness") -> {
+                currentStep = 3
+                renderReadiness()
+            }
+            !completion.optBoolean("details") -> {
+                currentStep = 4
+                renderDetails(state)
+            }
+            !completion.optBoolean("questionnaire") -> {
+                currentStep = 5
+                renderQuestionnaire()
+            }
+            !completion.optBoolean("partner_preferences") -> {
+                currentStep = 6
+                renderPreferences(state)
+            }
+            !completion.optBoolean("photos") -> {
+                currentStep = 7
+                renderPhotos(state)
+            }
+            else -> {
+                currentStep = 7
+                renderWaitlist(state)
+            }
         }
     }
 
     private fun reset(title: String, subtitle: String) {
         root.removeAllViews()
+
+        val brand = TextView(this).apply {
+            text = MatchLabStyle.brandText()
+            textSize = 22f
+            typeface = Typeface.create("sans", Typeface.BOLD)
+        }
+        root.addView(brand)
+
+        val progressHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 18),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 6),
+            )
+        }
+        progressHeader.addView(TextView(this).apply {
+            text = "Шаг " + currentStep.toString() + " из " + totalSteps.toString()
+            MatchLabStyle.subtitle(this)
+            textSize = 13f
+        })
+        root.addView(progressHeader)
+
+        val progress = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal,
+        ).apply {
+            max = totalSteps
+            this.progress = currentStep
+            minimumHeight = MatchLabStyle.dp(this@OnboardingActivity, 5)
+        }
+        MatchLabStyle.progress(progress)
+        root.addView(progress)
+
         addTitle(title)
         addText(subtitle, 16f)
+
         status = TextView(this).apply {
-            textSize = 15f
-            setPadding(0, 28, 0, 0)
+            MatchLabStyle.status(this)
+            visibility = View.GONE
         }
         root.addView(status)
+        MatchLabStyle.withMargins(status, top = 8)
         scroll.scrollTo(0, 0)
     }
 
     private fun renderLoading(message: String) {
         root.removeAllViews()
-        addTitle("MatchLab")
+        root.addView(TextView(this).apply {
+            text = MatchLabStyle.brandText()
+            textSize = 30f
+            typeface = Typeface.create("sans", Typeface.BOLD)
+        })
+        addTitle("Подбираем следующий шаг")
         addText(message, 16f)
-        status = TextView(this)
+        status = TextView(this).apply {
+            MatchLabStyle.status(this)
+            visibility = View.GONE
+        }
         root.addView(status)
     }
 
