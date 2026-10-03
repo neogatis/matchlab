@@ -50,6 +50,14 @@ from app.preferences.service import (
 )
 from app.prelaunch.policy import feature_flags
 from app.prelaunch.service import PrelaunchError, own_compatibility_profile, waitlist_status
+from app.privacy.legal import account_deletion_html, privacy_policy_html, terms_html
+from app.privacy.service import (
+    DeletionAlreadyRequested,
+    PrivacyError,
+    export_user_data,
+    request_account_deletion,
+    retention_policy,
+)
 from app.profile.service import (
     MarketUnavailable,
     ProfileError,
@@ -176,6 +184,25 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
         super().log_message(format, *args)
 
+    def _send_text(
+        self,
+        status: int,
+        body: str,
+        *,
+        content_type: str = "text/plain; charset=utf-8",
+    ) -> None:
+        raw = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
     def _send_json(self, status: int, payload: Any, *, cookies: list[str] | None = None) -> None:
         raw = json.dumps(
             payload,
@@ -247,11 +274,39 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 25,
+                        "phase": 26,
                         "photo_storage_configured": photo_storage_configured(),
                         "features": feature_flags(db),
                     },
                 )
+            return
+
+        if method == "GET" and path == "/privacy":
+            self._send_text(
+                HTTPStatus.OK,
+                privacy_policy_html(),
+                content_type="text/html; charset=utf-8",
+            )
+            return
+
+        if method == "GET" and path == "/terms":
+            self._send_text(
+                HTTPStatus.OK,
+                terms_html(),
+                content_type="text/html; charset=utf-8",
+            )
+            return
+
+        if method == "GET" and path == "/account-deletion":
+            self._send_text(
+                HTTPStatus.OK,
+                account_deletion_html(),
+                content_type="text/html; charset=utf-8",
+            )
+            return
+
+        if method == "GET" and path == f"{API_PREFIX}/privacy/retention":
+            self._send_json(HTTPStatus.OK, retention_policy())
             return
 
         if method == "POST" and path in {
@@ -549,6 +604,35 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/privacy/export":
+                self._send_json(
+                    HTTPStatus.OK,
+                    export_user_data(db, user_id=principal.user_id),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/privacy/delete":
+                body = self._body()
+                if str(body.get("confirmation", "")) != "DELETE":
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "deletion_confirmation_required",
+                        "confirmation must equal DELETE",
+                    )
+                result = request_account_deletion(
+                    db,
+                    user_id=principal.user_id,
+                )
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    result,
+                    cookies=[
+                        SESSION_COOKIE.header("deleted") + "; Max-Age=0",
+                        CSRF_COOKIE.header("deleted") + "; Max-Age=0",
+                    ],
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/waitlist/status":
                 self._send_json(
                     HTTPStatus.OK,
@@ -583,6 +667,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "age_gate", "message": str(exc)})
         except ConsoleAccessDenied as exc:
             self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
+        except DeletionAlreadyRequested as exc:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
         except PhotoNotFound as exc:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except (
@@ -597,6 +683,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             InvalidPreference,
             PreferenceError,
             PrelaunchError,
+            PrivacyError,
             SecurityError,
             ValueError,
         ) as exc:
