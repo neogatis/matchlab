@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.service import (
@@ -23,8 +23,24 @@ from app.auth.service import (
     register_email_user,
     revoke_session,
 )
-from app.db.models import User
+from app.db.models import Photo, User
 from app.db.session import make_engine
+from app.console.access import ConsoleAccessDenied, require_console
+from app.photos.service import (
+    PhotoError,
+    PhotoLimitReached,
+    PhotoNotFound,
+    UploadTicketError,
+    delete_photo,
+    finalize_upload,
+    list_owner_photos,
+    moderate_photo,
+    photo_progress,
+    prepare_upload,
+    reorder_photos,
+    set_main_photo,
+)
+from app.photos.storage import S3PhotoStorage
 from app.preferences.catalog import PREFERENCE_CATALOG
 from app.preferences.service import (
     InvalidPreference,
@@ -125,6 +141,7 @@ class Runtime:
 
 
 RUNTIME: Runtime | None = None
+PHOTO_STORAGE: S3PhotoStorage | None = None
 
 
 def runtime() -> Runtime:
@@ -134,8 +151,26 @@ def runtime() -> Runtime:
     return RUNTIME
 
 
+def photo_storage() -> S3PhotoStorage:
+    global PHOTO_STORAGE
+    if PHOTO_STORAGE is None:
+        PHOTO_STORAGE = S3PhotoStorage.from_env()
+    return PHOTO_STORAGE
+
+
+def photo_storage_configured() -> bool:
+    required = (
+        "MATCH_PHOTO_BUCKET",
+        "AWS_ENDPOINT_URL_S3",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    )
+    return all(os.environ.get(name, "").strip() for name in required)
+
+
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/24"
+    server_version = "MatchLab/25"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -212,7 +247,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 24,
+                        "phase": 25,
+                        "photo_storage_configured": photo_storage_configured(),
                         "features": feature_flags(db),
                     },
                 )
@@ -363,6 +399,156 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/photos":
+                storage = photo_storage()
+                items = []
+                for photo in list_owner_photos(db, user_id=principal.user_id):
+                    items.append(
+                        {
+                            "id": photo.id,
+                            "mime": photo.mime,
+                            "byte_size": photo.byte_size,
+                            "is_main": photo.is_main,
+                            "sort_order": photo.sort_order,
+                            "moderation_status": photo.moderation_status,
+                            "moderation_reason": photo.moderation_reason,
+                            "created_at": photo.created_at,
+                            "url": (
+                                storage.presign_download(photo.storage_key)
+                                if photo.storage_key
+                                else None
+                            ),
+                        }
+                    )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "photos": items,
+                        "progress": photo_progress(db, user_id=principal.user_id),
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/photos/prepare":
+                body = self._body()
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    prepare_upload(
+                        db,
+                        user_id=principal.user_id,
+                        mime=str(body.get("mime", "")),
+                        storage=photo_storage(),
+                    ),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/photos/finalize":
+                body = self._body()
+                photo = finalize_upload(
+                    db,
+                    user_id=principal.user_id,
+                    ticket_token=str(body.get("ticket", "")),
+                    storage=photo_storage(),
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "id": photo.id,
+                        "moderation_status": photo.moderation_status,
+                        "progress": photo_progress(db, user_id=principal.user_id),
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/photos/main":
+                body = self._body()
+                photo = set_main_photo(
+                    db,
+                    user_id=principal.user_id,
+                    photo_id=int(body.get("photo_id", 0)),
+                )
+                self._send_json(HTTPStatus.OK, {"id": photo.id, "is_main": photo.is_main})
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/photos/reorder":
+                body = self._body()
+                raw_ids = body.get("photo_ids", [])
+                if not isinstance(raw_ids, list):
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "photo_ids_list_required")
+                ordered = reorder_photos(
+                    db,
+                    user_id=principal.user_id,
+                    ordered_photo_ids=[int(value) for value in raw_ids],
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"photo_ids": [photo.id for photo in ordered]},
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/photos/delete":
+                body = self._body()
+                delete_photo(
+                    db,
+                    user_id=principal.user_id,
+                    photo_id=int(body.get("photo_id", 0)),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "progress": photo_progress(db, user_id=principal.user_id)},
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/admin/photos/pending":
+                require_console(db, user_id=principal.user_id, minimum_role="MODERATOR")
+                storage = photo_storage()
+                rows = db.execute(
+                    select(Photo)
+                    .where(Photo.moderation_status == "PENDING")
+                    .order_by(Photo.created_at, Photo.id)
+                    .limit(100)
+                ).scalars()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "photos": [
+                            {
+                                "id": photo.id,
+                                "user_id": photo.user_id,
+                                "mime": photo.mime,
+                                "byte_size": photo.byte_size,
+                                "is_main": photo.is_main,
+                                "created_at": photo.created_at,
+                                "url": storage.presign_download(photo.storage_key)
+                                if photo.storage_key
+                                else None,
+                            }
+                            for photo in rows
+                        ]
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/admin/photos/moderate":
+                require_console(db, user_id=principal.user_id, minimum_role="MODERATOR")
+                body = self._body()
+                photo = moderate_photo(
+                    db,
+                    photo_id=int(body.get("photo_id", 0)),
+                    status=str(body.get("status", "")),
+                    actor=f"user:{principal.user_id}",
+                    reason=str(body.get("reason", "")),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "id": photo.id,
+                        "user_id": photo.user_id,
+                        "moderation_status": photo.moderation_status,
+                    },
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/waitlist/status":
                 self._send_json(
                     HTTPStatus.OK,
@@ -395,7 +581,14 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": str(exc)})
         except UnderageUser as exc:
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "age_gate", "message": str(exc)})
+        except ConsoleAccessDenied as exc:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
+        except PhotoNotFound as exc:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except (
+            PhotoError,
+            PhotoLimitReached,
+            UploadTicketError,
             AuthError,
             MarketUnavailable,
             ProfileError,
