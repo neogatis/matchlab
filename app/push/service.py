@@ -179,6 +179,16 @@ def safe_payload(notification: Notification) -> tuple[str, str, dict[str, str]]:
             {"kind": "DATE_RESULT"},
         )
 
+    if kind == "PHOTO_APPROVED":
+        return "MatchLab", "Ваше фото одобрено", {"kind": "PHOTO_APPROVED"}
+
+    if kind == "PHOTO_REJECTED":
+        return (
+            "MatchLab",
+            "Одно из фото не прошло модерацию",
+            {"kind": "PHOTO_REJECTED"},
+        )
+
     return (
         "MatchLab",
         "У вас новое уведомление",
