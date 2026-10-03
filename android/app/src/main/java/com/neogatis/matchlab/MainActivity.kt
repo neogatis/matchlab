@@ -1,6 +1,7 @@
 package com.neogatis.matchlab
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -156,6 +157,7 @@ class MainActivity : AppCompatActivity() {
                     .onSuccess {
                         status.text = "Сессия восстановлена."
                         registerPush()
+                        openOnboarding()
                     }
                     .onFailure {
                         status.text = "Нужно войти снова."
@@ -198,6 +200,11 @@ class MainActivity : AppCompatActivity() {
         status.text = "Вход выполнен через $method. User ID: $userId"
         requestNotificationPermission()
         registerPush()
+        openOnboarding()
+    }
+
+    private fun openOnboarding() {
+        startActivity(Intent(this, OnboardingActivity::class.java))
     }
 
     private fun registerPush() {
