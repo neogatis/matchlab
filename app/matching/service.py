@@ -24,6 +24,7 @@ from app.db.models import (
 )
 from app.profile.service import is_matchable, user_age
 from app.prelaunch.policy import candidate_output_enabled
+from app.questionnaire.adaptive import adaptive_category_scores, has_adaptive_answers
 from .config import ALGORITHM_VERSION, CATEGORY_SECTIONS, FINAL_WEIGHTS, SOFT_IMPORTANCE_WEIGHT
 
 
@@ -280,6 +281,18 @@ def _question_similarity(a: Any, b: Any, question: QuestionnaireQuestion) -> flo
 
 
 def category_scores(db: Session, user_a: int, user_b: int) -> dict[str, int]:
+    if (
+        has_adaptive_answers(db, user_id=user_a)
+        or has_adaptive_answers(db, user_id=user_b)
+    ):
+        adaptive_scores = adaptive_category_scores(
+            db,
+            user_a=user_a,
+            user_b=user_b,
+        )
+        if adaptive_scores:
+            return adaptive_scores
+
     version = _active_questionnaire(db)
     if version is None:
         return {}
