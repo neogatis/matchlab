@@ -1,9 +1,10 @@
 import io
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
-from app.photos.storage import InvalidImageObject, sanitize_image_bytes
+from app.photos.storage import InvalidImageObject, _env_value, sanitize_image_bytes
 
 
 class PhotoSanitizerTests(unittest.TestCase):
@@ -19,6 +20,21 @@ class PhotoSanitizerTests(unittest.TestCase):
             kwargs["exif"] = metadata
         image.save(output, format="JPEG", quality=90, **kwargs)
         return output.getvalue()
+
+
+    def test_env_value_strips_matching_outer_quotes(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "A": '"quoted-value"',
+                "B": "'single-quoted'",
+                "C": "plain-value",
+            },
+            clear=False,
+        ):
+            self.assertEqual(_env_value("A"), "quoted-value")
+            self.assertEqual(_env_value("B"), "single-quoted")
+            self.assertEqual(_env_value("C"), "plain-value")
 
     def test_jpeg_is_reencoded_without_exif(self):
         raw = self._jpeg(exif=True)
