@@ -154,7 +154,7 @@ class SafetyServiceTests(unittest.TestCase):
             db.commit()
             self.assertEqual(db.get(User,user_id).status,"SOFT_BANNED")
             self.assertEqual(mutual_hard_pass(db,user_id,user_id+999)[1],"source_user_inactive")
-            self.assertEqual(db.query(AuditLog).filter_by(target_id=str(user_id)).count(),1)
+            self.assertEqual(db.query(AuditLog).filter_by(target_id=str(user_id), action="SAFETY_SOFT_BAN").count(),1)
 
             safety.moderate_user(db,actor="admin",user_id=user_id,action="BAN",reason="confirmed",now=self.now)
             safety.moderate_user(db,actor="admin",user_id=user_id,action="UNBAN",reason="appeal",now=self.now)
