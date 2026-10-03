@@ -34,6 +34,7 @@ from app.auth.service import (
 )
 from app.auth.oauth import (
     OAuthError,
+    configured_audiences,
     link_identity,
     login_or_register_identity,
     verify_identity_token,
@@ -214,9 +215,15 @@ def phone_auth_configured() -> bool:
 
 
 def social_auth_configured() -> dict[str, bool]:
+    def configured(provider: str) -> bool:
+        try:
+            return bool(configured_audiences(provider))
+        except OAuthError:
+            return False
+
     return {
-        "google": bool(os.environ.get("GOOGLE_CLIENT_ID", "").strip()),
-        "apple": bool(os.environ.get("APPLE_CLIENT_ID", "").strip()),
+        "google": configured("GOOGLE"),
+        "apple": configured("APPLE"),
     }
 
 
