@@ -8,9 +8,18 @@ android {
     namespace = "com.neogatis.matchlab"
     compileSdk = 36
 
+    signingConfigs {
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false
+        }
+    }
+
     defaultConfig {
         applicationId = "com.neogatis.matchlab"
-        minSdk = 26
+        minSdk = 23
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
