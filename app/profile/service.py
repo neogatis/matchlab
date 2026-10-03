@@ -23,6 +23,14 @@ ELIGIBILITY_STATUSES = {
 }
 GENDERS = {"M", "F", "OTHER"}
 SEEK_GENDERS = {"M", "F", "ANY", "OTHER"}
+DATING_GOALS = {"SERIOUS", "FAMILY", "SEE", "CHAT", "UNKNOWN"}
+CHILDREN_STATUSES = {"NO_CHILDREN", "HAS_CHILDREN"}
+CHILDREN_PLANS = {"WANTS", "MAYBE", "DOES_NOT_WANT"}
+SMOKING_VALUES = {"NO", "RARE", "YES"}
+ALCOHOL_VALUES = {"NO", "RARE", "MODERATE", "YES"}
+LIFESTYLE_VALUES = {"CALM", "BALANCED", "ACTIVE", "VERY_ACTIVE"}
+READINESS_CHAT_VALUES = {"YES", "RATHER_YES", "LOOK_ONLY"}
+READINESS_OFFLINE_VALUES = {"YES", "MAYBE", "NO"}
 
 
 class ProfileError(Exception):
@@ -62,9 +70,141 @@ def derive_status(in_relationship: bool, openness: str) -> tuple[str, str]:
 
 
 def readiness_score(chat: str, offline: str) -> int:
-    chat_points = {"YES": 60, "RATHER_YES": 42, "LOOK_ONLY": 12}.get(chat, 0)
-    offline_points = {"YES": 40, "MAYBE": 24, "NO": 0}.get(offline, 0)
+    if chat not in READINESS_CHAT_VALUES:
+        raise ProfileError("Invalid chat readiness value")
+    if offline not in READINESS_OFFLINE_VALUES:
+        raise ProfileError("Invalid offline readiness value")
+    chat_points = {"YES": 60, "RATHER_YES": 42, "LOOK_ONLY": 12}[chat]
+    offline_points = {"YES": 40, "MAYBE": 24, "NO": 0}[offline]
     return max(0, min(100, chat_points + offline_points))
+
+
+
+def profile_details_complete(profile: Profile | None) -> bool:
+    if profile is None:
+        return False
+    return bool(
+        profile.height is not None
+        and 100 <= int(profile.height) <= 250
+        and profile.dating_goal in DATING_GOALS
+        and profile.children_status in CHILDREN_STATUSES
+        and profile.children_plans in CHILDREN_PLANS
+        and profile.smoking in SMOKING_VALUES
+        and profile.alcohol in ALCOHOL_VALUES
+        and profile.lifestyle in LIFESTYLE_VALUES
+    )
+
+
+def readiness_complete(profile: Profile | None) -> bool:
+    if profile is None:
+        return False
+    return bool(
+        profile.readiness_chat in READINESS_CHAT_VALUES
+        and profile.readiness_offline in READINESS_OFFLINE_VALUES
+    )
+
+
+def basic_profile_complete(profile: Profile | None) -> bool:
+    if profile is None:
+        return False
+    return bool(
+        (profile.display_name or "").strip()
+        and profile.dob is not None
+        and profile.gender in GENDERS
+        and profile.seek_gender in SEEK_GENDERS
+        and profile.market_id is not None
+    )
+
+
+def set_match_profile_details(
+    db: Session,
+    *,
+    user_id: int,
+    height: int,
+    dating_goal: str,
+    children_status: str,
+    children_plans: str,
+    smoking: str,
+    alcohol: str,
+    lifestyle: str,
+    bio: str = "",
+    religion: str = "",
+    nationality: str = "",
+    now: datetime | None = None,
+) -> Profile:
+    now = now or utcnow()
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise ProfileError("Profile not found")
+
+    if isinstance(height, bool) or not isinstance(height, int) or not 100 <= height <= 250:
+        raise ProfileError("Height must be between 100 and 250")
+    if dating_goal not in DATING_GOALS:
+        raise ProfileError("Invalid dating goal")
+    if children_status not in CHILDREN_STATUSES:
+        raise ProfileError("Invalid children status")
+    if children_plans not in CHILDREN_PLANS:
+        raise ProfileError("Invalid children plans")
+    if smoking not in SMOKING_VALUES:
+        raise ProfileError("Invalid smoking value")
+    if alcohol not in ALCOHOL_VALUES:
+        raise ProfileError("Invalid alcohol value")
+    if lifestyle not in LIFESTYLE_VALUES:
+        raise ProfileError("Invalid lifestyle value")
+
+    bio = (bio or "").strip()
+    religion = (religion or "").strip()
+    nationality = (nationality or "").strip()
+    if len(bio) > 2000:
+        raise ProfileError("Bio is too long")
+    if len(religion) > 120:
+        raise ProfileError("Religion is too long")
+    if len(nationality) > 120:
+        raise ProfileError("Nationality is too long")
+
+    profile.height = height
+    profile.dating_goal = dating_goal
+    profile.children_status = children_status
+    profile.children_plans = children_plans
+    profile.smoking = smoking
+    profile.alcohol = alcohol
+    profile.lifestyle = lifestyle
+    profile.bio = bio
+    profile.religion = religion
+    profile.nationality = nationality
+    profile.updated_at = now
+    db.flush()
+    recompute_profile_completion(db, user_id=user_id, now=now)
+    return profile
+
+
+def profile_completion_state(profile: Profile | None) -> dict[str, bool]:
+    if profile is None:
+        return {
+            "basic": False,
+            "details": False,
+            "relationship": False,
+            "readiness": False,
+            "questionnaire": False,
+            "partner_preferences": False,
+            "photos": False,
+            "profile": False,
+        }
+    relationship = bool(
+        profile.status_confirmed_at is not None
+        and profile.relationship_status in RELATIONSHIP_STATUSES
+        and profile.eligibility_status in ELIGIBILITY_STATUSES
+    )
+    return {
+        "basic": basic_profile_complete(profile),
+        "details": profile_details_complete(profile),
+        "relationship": relationship,
+        "readiness": readiness_complete(profile),
+        "questionnaire": bool(profile.questionnaire_completed),
+        "partner_preferences": bool(profile.partner_preferences_completed),
+        "photos": bool(profile.photos_completed),
+        "profile": bool(profile.profile_completed),
+    }
 
 
 def ensure_market(
@@ -257,15 +397,10 @@ def recompute_profile_completion(
     if profile is None:
         raise ProfileError("Profile not found")
 
-    basic_complete = bool(
-        (profile.display_name or "").strip()
-        and profile.dob is not None
-        and profile.gender in GENDERS
-        and profile.seek_gender in SEEK_GENDERS
-        and profile.market_id is not None
-    )
     complete = bool(
-        basic_complete
+        basic_profile_complete(profile)
+        and profile_details_complete(profile)
+        and readiness_complete(profile)
         and profile.questionnaire_completed
         and profile.partner_preferences_completed
         and profile.photos_completed
