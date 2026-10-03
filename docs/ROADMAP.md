@@ -37,3 +37,11 @@ Git source deployment
                   -> object storage/photos
                       -> safe public pre-launch acquisition
 ```
+
+
+## Post-roadmap release execution
+
+24. **Phase 24 — PostgreSQL HTTP cutover**: versioned production HTTP runtime for pre-launch registration/profile/questionnaire/preferences.
+25. **Phase 25 — Production photo storage**: private signed uploads, image sanitation/EXIF removal, photo HTTP APIs and moderator review.
+
+Next: production deployment evidence, deletion worker, privacy/delete/export, then native client work.
