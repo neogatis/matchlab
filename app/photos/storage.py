@@ -24,6 +24,13 @@ class InvalidImageObject(ValueError):
     pass
 
 
+def _env_value(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    return value
+
+
 def sanitize_image_bytes(raw: bytes, expected_mime: str) -> bytes:
     if not raw:
         raise InvalidImageObject("empty_image")
@@ -94,11 +101,11 @@ class S3PhotoStorage:
 
     @classmethod
     def from_env(cls) -> "S3PhotoStorage":
-        bucket = os.environ.get("MATCH_PHOTO_BUCKET", "").strip()
-        endpoint = os.environ.get("AWS_ENDPOINT_URL_S3", "").strip()
-        region = os.environ.get("AWS_REGION", "").strip()
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "").strip()
-        secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "").strip()
+        bucket = _env_value("MATCH_PHOTO_BUCKET")
+        endpoint = _env_value("AWS_ENDPOINT_URL_S3")
+        region = _env_value("AWS_REGION")
+        access_key = _env_value("AWS_ACCESS_KEY_ID")
+        secret_key = _env_value("AWS_SECRET_ACCESS_KEY")
         missing = [
             name
             for name, value in [
