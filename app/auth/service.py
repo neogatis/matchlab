@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from app.analytics.events import EVENT_REGISTRATION, track_once
-from app.db.models import AuthChallenge, AuthRateLimit, MarketingAttribution, Session as DbSession, User
+from app.db.models import AuthChallenge, AuthIdentity, AuthRateLimit, MarketingAttribution, Session as DbSession, User
 
 
 PASSWORD_HASHER = PasswordHasher(
@@ -347,7 +347,7 @@ def create_challenge(
     now: datetime | None = None,
 ) -> str:
     now = now or utcnow()
-    if channel not in {"email", "phone"}:
+    if channel not in {"email", "phone", "oidc"}:
         raise AuthError("Unsupported challenge channel")
     secret = f"{secrets.randbelow(1_000_000):06d}" if channel == "phone" else secrets.token_urlsafe(32)
     row = AuthChallenge(
@@ -477,3 +477,313 @@ def reset_password_with_challenge(
     revoke_all_sessions(db, user.id, now=now)
     db.flush()
     return user
+
+
+def phone_bucket(phone_e164: str) -> str:
+    return "phone:" + sha256_text((phone_e164 or "").strip())
+
+
+def phone_identity_subject(phone_e164: str) -> str:
+    return sha256_text("PHONE:" + (phone_e164 or "").strip())
+
+
+def _synthetic_phone_email(phone_e164: str) -> str:
+    digest = sha256_text("phone-user:" + phone_e164)[:40]
+    return f"phone-{digest}@phone.matchlab.invalid"
+
+
+def request_phone_login_code(
+    db: OrmSession,
+    *,
+    phone_e164: str,
+    sender,
+    now: datetime | None = None,
+) -> None:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    _rate_limit(
+        db,
+        phone_bucket(phone),
+        limit=5,
+        window_seconds=15 * 60,
+        block_seconds=30 * 60,
+        now=now,
+    )
+    user = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    code = create_challenge(
+        db,
+        user_id=user.id if user else None,
+        purpose="PHONE_LOGIN",
+        channel="phone",
+        target=phone,
+        ttl=timedelta(minutes=10),
+        max_attempts=5,
+        now=now,
+    )
+    sender.send_otp(phone_e164=phone, code=code)
+
+
+def _apply_referral_to_new_user(
+    db: OrmSession,
+    *,
+    user: User,
+    referral_code: str | None,
+) -> None:
+    referral_input = (referral_code or "").strip()
+    resolved_referrer = None
+    if referral_input:
+        from app.referrals.service import resolve_referral_code
+
+        referrer = resolve_referral_code(db, code=referral_input)
+        if referrer is not None:
+            resolved_referrer = referrer.id
+            user.referred_by = referrer.id
+
+    db.add(
+        MarketingAttribution(
+            user_id=user.id,
+            referral_input=referral_input[:255],
+        )
+    )
+    if resolved_referrer is not None:
+        from app.referrals.service import register_referral
+
+        register_referral(
+            db,
+            referrer_user_id=resolved_referrer,
+            referred_user_id=user.id,
+            referral_code_used=referral_input or None,
+        )
+
+
+def verify_phone_login_code(
+    db: OrmSession,
+    *,
+    phone_e164: str,
+    code: str,
+    referral_code: str | None = None,
+    now: datetime | None = None,
+) -> User:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    challenge = consume_challenge(
+        db,
+        purpose="PHONE_LOGIN",
+        channel="phone",
+        target=phone,
+        secret=code,
+        now=now,
+    )
+
+    user = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    if challenge.user_id is not None:
+        if user is None or user.id != challenge.user_id:
+            raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+
+    if user is None:
+        user = User(
+            email=_synthetic_phone_email(phone),
+            password_hash=hash_password(secrets.token_urlsafe(48)),
+            referral_code=secrets.token_urlsafe(9),
+            phone_e164=phone,
+            phone_verified_at=now,
+            password_updated_at=now,
+        )
+        db.add(user)
+        db.flush()
+        _apply_referral_to_new_user(
+            db,
+            user=user,
+            referral_code=referral_code,
+        )
+        db.add(
+            AuthIdentity(
+                user_id=user.id,
+                provider="PHONE",
+                provider_subject=phone_identity_subject(phone),
+                provider_email=None,
+                verified_at=now,
+            )
+        )
+        track_once(
+            db,
+            event_type=EVENT_REGISTRATION,
+            user_id=user.id,
+            metadata={"channel": "phone"},
+        )
+    else:
+        if user.status not in {"ACTIVE", "SOFT_BANNED"}:
+            raise InvalidCredentials("Account unavailable")
+        user.phone_verified_at = now
+        identity = db.execute(
+            select(AuthIdentity).where(
+                AuthIdentity.provider == "PHONE",
+                AuthIdentity.provider_subject == phone_identity_subject(phone),
+            )
+        ).scalar_one_or_none()
+        if identity is None:
+            db.add(
+                AuthIdentity(
+                    user_id=user.id,
+                    provider="PHONE",
+                    provider_subject=phone_identity_subject(phone),
+                    provider_email=None,
+                    verified_at=now,
+                )
+            )
+
+    db.flush()
+    return user
+
+
+def request_phone_link_code(
+    db: OrmSession,
+    *,
+    user_id: int,
+    phone_e164: str,
+    sender,
+    now: datetime | None = None,
+) -> None:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    owner = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    if owner is not None and owner.id != user_id:
+        raise AuthError("phone_already_linked")
+
+    _rate_limit(
+        db,
+        "phone-link:" + sha256_text(phone),
+        limit=5,
+        window_seconds=15 * 60,
+        block_seconds=30 * 60,
+        now=now,
+    )
+    code = create_challenge(
+        db,
+        user_id=user_id,
+        purpose="PHONE_LINK",
+        channel="phone",
+        target=phone,
+        ttl=timedelta(minutes=10),
+        max_attempts=5,
+        now=now,
+    )
+    sender.send_otp(phone_e164=phone, code=code)
+
+
+def verify_phone_link_code(
+    db: OrmSession,
+    *,
+    user_id: int,
+    phone_e164: str,
+    code: str,
+    now: datetime | None = None,
+) -> User:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    challenge = consume_challenge(
+        db,
+        purpose="PHONE_LINK",
+        channel="phone",
+        target=phone,
+        secret=code,
+        now=now,
+    )
+    if challenge.user_id != user_id:
+        raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+
+    owner = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    if owner is not None and owner.id != user_id:
+        raise AuthError("phone_already_linked")
+
+    user = db.get(User, user_id)
+    if user is None or user.status not in {"ACTIVE", "SOFT_BANNED"}:
+        raise AuthError("account_unavailable")
+
+    user.phone_e164 = phone
+    user.phone_verified_at = now
+    subject = phone_identity_subject(phone)
+    identity = db.execute(
+        select(AuthIdentity).where(
+            AuthIdentity.provider == "PHONE",
+            AuthIdentity.provider_subject == subject,
+        )
+    ).scalar_one_or_none()
+    if identity is not None and identity.user_id != user_id:
+        raise AuthError("phone_already_linked")
+    if identity is None:
+        db.add(
+            AuthIdentity(
+                user_id=user_id,
+                provider="PHONE",
+                provider_subject=subject,
+                provider_email=None,
+                verified_at=now,
+            )
+        )
+    db.flush()
+    return user
+
+
+def create_oidc_nonce(
+    db: OrmSession,
+    *,
+    provider: str,
+    purpose: str,
+    user_id: int | None = None,
+    now: datetime | None = None,
+) -> str:
+    provider = (provider or "").strip().upper()
+    if provider not in {"GOOGLE", "APPLE"}:
+        raise AuthError("unsupported_oauth_provider")
+    if purpose not in {"OIDC_LOGIN", "OIDC_LINK"}:
+        raise AuthError("unsupported_oidc_purpose")
+    return create_challenge(
+        db,
+        user_id=user_id,
+        purpose=purpose,
+        channel="oidc",
+        target=provider,
+        ttl=timedelta(minutes=10),
+        max_attempts=1,
+        now=now,
+    )
+
+
+def consume_oidc_nonce(
+    db: OrmSession,
+    *,
+    provider: str,
+    purpose: str,
+    nonce: str,
+    expected_user_id: int | None = None,
+    now: datetime | None = None,
+) -> AuthChallenge:
+    provider = (provider or "").strip().upper()
+    challenge = consume_challenge(
+        db,
+        purpose=purpose,
+        channel="oidc",
+        target=provider,
+        secret=nonce,
+        now=now,
+    )
+    if expected_user_id is not None and challenge.user_id != expected_user_id:
+        raise InvalidOrExpiredChallenge("Invalid or expired challenge")
+    return challenge
