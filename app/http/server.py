@@ -44,6 +44,7 @@ from app.auth.web import phone_login_html
 from app.db.models import AuthIdentity, Market, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
+from app.console.web import photo_moderation_html
 from app.photos.service import (
     PhotoError,
     PhotoLimitReached,
@@ -339,7 +340,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/29"
+    server_version = "MatchLab/30"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -435,7 +436,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 29,
+                        "phase": 30,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -621,6 +622,19 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             if method not in SAFE_METHODS:
                 self._origin_guard()
                 self._csrf_guard()
+
+            if method == "GET" and path == "/moderation/photos":
+                require_console(
+                    db,
+                    user_id=principal.user_id,
+                    minimum_role="MODERATOR",
+                )
+                self._send_text(
+                    HTTPStatus.OK,
+                    photo_moderation_html(),
+                    content_type="text/html; charset=utf-8",
+                )
+                return
 
             if method == "POST" and path == f"{API_PREFIX}/auth/logout":
                 token = _cookie_value(self.headers.get("Cookie"), SESSION_COOKIE.name)
