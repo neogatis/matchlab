@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
                     verifyButton.visibility = View.VISIBLE
                     codeInput.requestFocus()
                 }.onFailure {
-                    status.text = "Ошибка отправки: \${it.message}"
+                    status.text = "Ошибка отправки: ${it.message}"
                 }
             }
         }
@@ -120,7 +120,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "телефон")
                 }.onFailure {
-                    status.text = "Ошибка входа: \${it.message}"
+                    status.text = "Ошибка входа: ${it.message}"
                 }
             }
         }
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "Google")
                 }.onFailure {
-                    status.text = "Google пока не завершён: \${it.message}"
+                    status.text = "Google пока не завершён: ${it.message}"
                 }
             }
         }
@@ -185,7 +185,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onAuthenticated(userId: Long, method: String) {
-        status.text = "Вход выполнен через \$method. User ID: \$userId"
+        status.text = "Вход выполнен через $method. User ID: $userId"
         requestNotificationPermission()
         registerPush()
     }
@@ -198,16 +198,16 @@ class MainActivity : AppCompatActivity() {
                         api.registerPushToken(token)
                     }.onSuccess { deviceId ->
                         status.text = status.text.toString() +
-                            "\\nPush подключён. Device ID: \$deviceId"
+                            "\nPush подключён. Device ID: $deviceId"
                     }.onFailure {
                         status.text = status.text.toString() +
-                            "\\nНе удалось зарегистрировать push: \${it.message}"
+                            "\nНе удалось зарегистрировать push: ${it.message}"
                     }
                 }
             }
             .addOnFailureListener {
                 status.text = status.text.toString() +
-                    "\\nНе удалось получить FCM token: \${it.message}"
+                    "\nНе удалось получить FCM token: ${it.message}"
             }
     }
 
