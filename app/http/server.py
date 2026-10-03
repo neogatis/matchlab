@@ -29,9 +29,11 @@ from app.auth.service import (
     register_email_user,
     request_phone_link_code,
     request_phone_login_code,
+    request_phone_registration_code,
     revoke_session,
     verify_phone_link_code,
     verify_phone_login_code,
+    verify_phone_registration_code,
 )
 from app.auth.oauth import (
     OAuthError,
@@ -344,7 +346,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/32"
+    server_version = "MatchLab/33"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -440,7 +442,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 32,
+                        "phase": 33,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -526,6 +528,48 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     HTTPStatus.CREATED if path.endswith("/register") else HTTPStatus.OK,
                     {"ok": True, "user_id": user.id},
+                    cookies=[
+                        SESSION_COOKIE.header(bearer),
+                        CSRF_COOKIE.header(csrf),
+                    ],
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/phone/register/request":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                request_phone_registration_code(
+                    db,
+                    phone_e164=str(body.get("phone", "")),
+                    sender=sms_sender_from_env(),
+                )
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    {"ok": True, "delivery": "sms"},
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/phone/register/verify":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                user = verify_phone_registration_code(
+                    db,
+                    phone_e164=str(body.get("phone", "")),
+                    code=str(body.get("code", "")),
+                    password=str(body.get("password", "")),
+                    referral_code=body.get("referral_code"),
+                )
+                bearer = create_session(
+                    db,
+                    user.id,
+                    user_agent=self.headers.get("User-Agent", ""),
+                )
+                csrf = new_csrf_token()
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {"ok": True, "user_id": user.id, "auth_method": "phone"},
                     cookies=[
                         SESSION_COOKIE.header(bearer),
                         CSRF_COOKIE.header(csrf),
