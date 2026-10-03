@@ -554,6 +554,116 @@ def _synthetic_phone_email(phone_e164: str) -> str:
     return f"phone-{digest}@phone.matchlab.invalid"
 
 
+def request_phone_registration_code(
+    db: OrmSession,
+    *,
+    phone_e164: str,
+    sender,
+    now: datetime | None = None,
+) -> None:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    existing = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise AuthError("phone_already_registered")
+
+    _rate_limit(
+        db,
+        "sms:global",
+        limit=100,
+        window_seconds=15 * 60,
+        block_seconds=15 * 60,
+        now=now,
+    )
+    _rate_limit(
+        db,
+        "phone-register:" + sha256_text(phone),
+        limit=5,
+        window_seconds=15 * 60,
+        block_seconds=30 * 60,
+        now=now,
+    )
+    code = create_challenge(
+        db,
+        user_id=None,
+        purpose="PHONE_REGISTER",
+        channel="phone",
+        target=phone,
+        ttl=timedelta(minutes=10),
+        max_attempts=5,
+        now=now,
+    )
+    sender.send_otp(phone_e164=phone, code=code)
+
+
+def verify_phone_registration_code(
+    db: OrmSession,
+    *,
+    phone_e164: str,
+    code: str,
+    password: str,
+    referral_code: str | None = None,
+    now: datetime | None = None,
+) -> User:
+    from app.auth.sms import normalize_phone
+
+    now = now or utcnow()
+    phone = normalize_phone(phone_e164)
+    validate_password(password)
+
+    consume_challenge(
+        db,
+        purpose="PHONE_REGISTER",
+        channel="phone",
+        target=phone,
+        secret=code,
+        now=now,
+    )
+
+    existing = db.execute(
+        select(User).where(User.phone_e164 == phone)
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise AuthError("phone_already_registered")
+
+    user = User(
+        email=_synthetic_phone_email(phone),
+        password_hash=hash_password(password),
+        referral_code=secrets.token_urlsafe(9),
+        phone_e164=phone,
+        phone_verified_at=now,
+        password_updated_at=now,
+    )
+    db.add(user)
+    db.flush()
+    _apply_referral_to_new_user(
+        db,
+        user=user,
+        referral_code=referral_code,
+    )
+    db.add(
+        AuthIdentity(
+            user_id=user.id,
+            provider="PHONE",
+            provider_subject=phone_identity_subject(phone),
+            provider_email=None,
+            verified_at=now,
+        )
+    )
+    track_once(
+        db,
+        event_type=EVENT_REGISTRATION,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+    )
+    db.flush()
+    return user
+
+
 def request_phone_login_code(
     db: OrmSession,
     *,
