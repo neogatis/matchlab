@@ -39,6 +39,7 @@ from app.auth.oauth import (
     verify_identity_token,
 )
 from app.auth.sms import SmsError, sms_sender_from_env
+from app.auth.web import phone_login_html
 from app.db.models import AuthIdentity, Photo, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
@@ -396,6 +397,14 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_text(
                 HTTPStatus.OK,
                 account_deletion_html(),
+                content_type="text/html; charset=utf-8",
+            )
+            return
+
+        if method == "GET" and path == "/phone-login":
+            self._send_text(
+                HTTPStatus.OK,
+                phone_login_html(),
                 content_type="text/html; charset=utf-8",
             )
             return
