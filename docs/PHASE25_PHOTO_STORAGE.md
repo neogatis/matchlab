@@ -61,7 +61,7 @@ Only approved photos count toward profile completion. Two approved photos plus a
 
 Photo deletion keeps the existing transactional deletion outbox. Database state is removed first and object deletion is processed independently so a failed S3 deletion does not roll back user-visible deletion.
 
-A periodic deletion worker still needs to be attached to production operations.
+`scripts/process_photo_deletions.py` is the idempotent deletion worker. It still needs to be attached to a production cron/scheduled service.
 
 ## Production configuration
 
@@ -97,4 +97,4 @@ Before closing the App Store object-storage blocker:
 5. verify sanitized metadata is absent on the stored object;
 6. approve two photos as a moderator;
 7. verify the waitlist profile changes to photo-complete;
-8. exercise deletion and the deletion-outbox worker.
+8. attach `scripts/process_photo_deletions.py` to a production schedule and exercise deletion end-to-end.
