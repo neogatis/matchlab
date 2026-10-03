@@ -43,6 +43,14 @@ class FakeStorage:
             raise KeyError(object_key)
         return self.objects[object_key]
 
+    def sanitize_image(self, object_key, *, expected_mime, max_bytes):
+        metadata = self.head(object_key)
+        if metadata.content_type != expected_mime:
+            raise ValueError("content type mismatch")
+        if metadata.content_length > max_bytes:
+            raise ValueError("file too large")
+        return metadata
+
     def delete(self, object_key):
         self.deleted.append(object_key)
         self.objects.pop(object_key, None)
