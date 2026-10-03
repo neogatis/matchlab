@@ -247,6 +247,19 @@ class MatchLabApi(context: Context) {
             .put("nationality", nationality),
     )
 
+    suspend fun getAdaptiveQuestionnaire(): JSONObject =
+        get("/api/v1/questionnaire/adaptive")
+
+    suspend fun answerAdaptiveQuestion(
+        questionToken: String,
+        value: Int,
+    ): JSONObject = post(
+        "/api/v1/questionnaire/adaptive/answer",
+        JSONObject()
+            .put("question_token", questionToken)
+            .put("value", value),
+    )
+
     suspend fun getQuestionnaire(): JSONObject = get("/api/v1/questionnaire")
 
     suspend fun saveQuestionnaireAnswer(
