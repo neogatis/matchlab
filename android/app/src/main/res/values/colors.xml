@@ -1,0 +1,11 @@
+<resources>
+    <color name="matchlab_background">#FFF9F6</color>
+    <color name="matchlab_surface">#FFFFFF</color>
+    <color name="matchlab_surface_soft">#FFF1EF</color>
+    <color name="matchlab_navy">#151C35</color>
+    <color name="matchlab_coral">#FF5D6C</color>
+    <color name="matchlab_coral_dark">#E94B65</color>
+    <color name="matchlab_muted">#777985</color>
+    <color name="matchlab_border">#F1D9D5</color>
+    <color name="matchlab_success">#2FA97C</color>
+</resources>
