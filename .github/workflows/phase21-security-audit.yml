@@ -1,0 +1,58 @@
+name: phase21-security-audit
+
+on:
+  push:
+    branches: [phase21-security-audit]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install production dependencies
+        run: pip install -r requirements-photo.txt
+
+      - name: Upgrade schema
+        run: alembic upgrade head
+
+      - name: Security source scan
+        run: python scripts/security_source_scan.py
+
+      - name: Security primitive tests
+        run: python -m unittest tests.test_security_http -v
+
+      - name: Auth regression
+        run: python -m unittest tests.test_auth_service -v
+
+      - name: Console RBAC regression
+        run: python -m unittest tests.test_console_service -v
+
+      - name: Safety regression
+        run: python -m unittest tests.test_safety_service -v
+
+      - name: Photo security regression
+        run: python -m unittest tests.test_photos_service -v
