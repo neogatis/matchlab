@@ -178,7 +178,7 @@ def photo_storage_configured() -> bool:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/25"
+    server_version = "MatchLab/26"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
