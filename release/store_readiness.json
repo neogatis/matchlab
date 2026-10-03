@@ -30,17 +30,21 @@
     }
   },
   "public_runtime": {
-    "postgres_http_runtime": false,
-    "secure_http_boundary": false,
-    "photo_object_storage": false
+    "postgres_http_runtime": true,
+    "secure_http_boundary": true,
+    "photo_object_storage": true,
+    "production_url": "https://matchlab-production.up.railway.app",
+    "railway_healthcheck_verified": true,
+    "neon_production_branch": "production"
   },
   "legal": {
-    "privacy_policy_url": null,
-    "terms_url": null,
+    "privacy_policy_url": "https://matchlab-production.up.railway.app/privacy",
+    "terms_url": "https://matchlab-production.up.railway.app/terms",
     "data_export_user_flow": true,
     "account_deletion_user_flow": true,
-    "retention_policy_published": false,
-    "retention_policy_implemented": true
+    "retention_policy_published": true,
+    "retention_policy_implemented": true,
+    "account_deletion_url": "https://matchlab-production.up.railway.app/account-deletion"
   },
   "safety": {
     "photo_moderation_domain": true,
