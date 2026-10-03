@@ -1,0 +1,29 @@
+name: phase24-http-runtime
+
+on:
+  push:
+    paths:
+      - "app/http/**"
+      - "app/security/**"
+      - "app/auth/**"
+      - "app/profile/**"
+      - "app/questionnaire/**"
+      - "app/preferences/**"
+      - "app/prelaunch/**"
+      - "tests/test_http_runtime_contract.py"
+      - "tests/test_security_http.py"
+      - "requirements-auth.txt"
+      - ".github/workflows/phase24-http-runtime.yml"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-auth.txt
+      - run: python -m unittest tests.test_http_runtime_contract tests.test_security_http -v
+      - run: python -m py_compile app/http/server.py
