@@ -10,9 +10,11 @@ on:
       - "app/questionnaire/**"
       - "app/preferences/**"
       - "app/prelaunch/**"
+      - "app/photos/**"
       - "tests/test_http_runtime_contract.py"
       - "tests/test_security_http.py"
-      - "requirements-auth.txt"\n      - "requirements-photo.txt"\n      - "app/photos/**"
+      - "requirements-auth.txt"
+      - "requirements-photo.txt"
       - ".github/workflows/phase24-http-runtime.yml"
   pull_request:
 
