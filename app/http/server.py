@@ -20,6 +20,7 @@ from app.auth.service import (
     InvalidCredentials,
     InvalidOrExpiredChallenge,
     RateLimited,
+    authenticate_identifier_password,
     authenticate_password,
     consume_oidc_nonce,
     create_oidc_nonce,
@@ -343,7 +344,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/31"
+    server_version = "MatchLab/32"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -439,7 +440,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 31,
+                        "phase": 32,
                         "phone_auth_configured": phone_auth_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
@@ -503,11 +504,19 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         referral_code=body.get("referral_code"),
                     )
                 else:
-                    user = authenticate_password(
-                        db,
-                        body.get("email", ""),
-                        body.get("password", ""),
-                    )
+                    identifier = body.get("identifier")
+                    if identifier is None:
+                        user = authenticate_password(
+                            db,
+                            body.get("email", ""),
+                            body.get("password", ""),
+                        )
+                    else:
+                        user = authenticate_identifier_password(
+                            db,
+                            str(identifier),
+                            str(body.get("password", "")),
+                        )
                 bearer = create_session(
                     db,
                     user.id,
@@ -543,11 +552,17 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._origin_guard()
             body = self._body()
             with runtime().db() as db:
+                password_value = body.get("password")
                 user = verify_phone_login_code(
                     db,
                     phone_e164=str(body.get("phone", "")),
                     code=str(body.get("code", "")),
                     referral_code=body.get("referral_code"),
+                    new_password=(
+                        str(password_value)
+                        if password_value is not None and str(password_value) != ""
+                        else None
+                    ),
                 )
                 bearer = create_session(
                     db,
