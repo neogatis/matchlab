@@ -1,2 +1,1 @@
-# MatchLab v7 baseline uses Python 3.12 standard library only.
-# Production refactor dependencies will be introduced in later phases.
+-r requirements-push.txt
