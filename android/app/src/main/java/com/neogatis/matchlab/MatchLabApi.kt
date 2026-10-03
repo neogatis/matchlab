@@ -54,6 +54,8 @@ class MatchLabApi(context: Context) {
     private val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
     private val cookieJar = PersistentCookieJar(context.applicationContext)
 
+    private val rawClient = OkHttpClient()
+
     private val client = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         .addInterceptor { chain ->
@@ -119,6 +121,128 @@ class MatchLabApi(context: Context) {
     }
 
     suspend fun listAuthMethods(): JSONObject = get("/api/v1/auth/methods")
+
+
+    suspend fun getOnboarding(): JSONObject = get("/api/v1/onboarding")
+
+    suspend fun getProfile(): JSONObject = get("/api/v1/profile/me")
+
+    suspend fun saveBasicProfile(
+        displayName: String,
+        dob: String,
+        gender: String,
+        seekGender: String,
+        marketCode: String = "KZ-ALA",
+    ): JSONObject = post(
+        "/api/v1/profile/basic",
+        JSONObject()
+            .put("display_name", displayName)
+            .put("dob", dob)
+            .put("gender", gender)
+            .put("seek_gender", seekGender)
+            .put("market_code", marketCode)
+            .put("preferred_locale", "ru-KZ"),
+    )
+
+    suspend fun saveRelationship(
+        inRelationship: Boolean,
+        openness: String,
+    ): JSONObject = post(
+        "/api/v1/profile/relationship",
+        JSONObject()
+            .put("in_relationship", inRelationship)
+            .put("openness", openness),
+    )
+
+    suspend fun saveReadiness(
+        chat: String,
+        offline: String,
+    ): JSONObject = post(
+        "/api/v1/profile/readiness",
+        JSONObject()
+            .put("chat", chat)
+            .put("offline", offline),
+    )
+
+    suspend fun saveProfileDetails(
+        height: Int,
+        datingGoal: String,
+        childrenStatus: String,
+        childrenPlans: String,
+        smoking: String,
+        alcohol: String,
+        lifestyle: String,
+        bio: String = "",
+        religion: String = "",
+        nationality: String = "",
+    ): JSONObject = post(
+        "/api/v1/profile/details",
+        JSONObject()
+            .put("height", height)
+            .put("dating_goal", datingGoal)
+            .put("children_status", childrenStatus)
+            .put("children_plans", childrenPlans)
+            .put("smoking", smoking)
+            .put("alcohol", alcohol)
+            .put("lifestyle", lifestyle)
+            .put("bio", bio)
+            .put("religion", religion)
+            .put("nationality", nationality),
+    )
+
+    suspend fun getQuestionnaire(): JSONObject = get("/api/v1/questionnaire")
+
+    suspend fun saveQuestionnaireAnswer(
+        questionId: Long,
+        value: Any,
+    ): JSONObject {
+        val answers = JSONObject().put(questionId.toString(), value)
+        return post(
+            "/api/v1/questionnaire/answers",
+            JSONObject().put("answers", answers),
+        )
+    }
+
+    suspend fun getPreferences(): JSONObject = get("/api/v1/preferences")
+
+    suspend fun savePreferences(preferences: JSONObject): JSONObject = post(
+        "/api/v1/preferences",
+        JSONObject().put("preferences", preferences),
+    )
+
+    suspend fun getPhotos(): JSONObject = get("/api/v1/photos")
+
+    suspend fun preparePhoto(mime: String): JSONObject = post(
+        "/api/v1/photos/prepare",
+        JSONObject().put("mime", mime),
+    )
+
+    suspend fun uploadPreparedPhoto(
+        url: String,
+        mime: String,
+        bytes: ByteArray,
+    ) = withContext(Dispatchers.IO) {
+        val body = bytes.toRequestBody(mime.toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .put(body)
+            .header("Content-Type", mime)
+            .build()
+        rawClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Upload HTTP ${response.code}")
+            }
+        }
+    }
+
+    suspend fun finalizePhoto(ticket: String): JSONObject = post(
+        "/api/v1/photos/finalize",
+        JSONObject().put("ticket", ticket),
+    )
+
+    suspend fun getWaitlistStatus(): JSONObject = get("/api/v1/waitlist/status")
+
+    suspend fun getCompatibilityProfile(): JSONObject = get("/api/v1/compatibility/me")
 
     private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
         val request = Request.Builder()
