@@ -1,0 +1,61 @@
+name: phase20-full-qa
+
+on:
+  push:
+    branches: [phase20-full-qa]
+  pull_request:
+    branches: [main]
+
+jobs:
+  full-qa:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+      PRE_LAUNCH_MODE: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install all production dependencies
+        run: pip install -r requirements-photo.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q app scripts tests
+
+      - name: Upgrade full PostgreSQL schema
+        run: alembic upgrade head
+
+      - name: Verify ORM/schema alignment
+        run: alembic check
+
+      - name: Run complete test suite
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Verify reversible migration chain
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+
+      - name: Verify no accidental placeholders in production packages
+        run: |
+          python scripts/qa_no_placeholders.py
