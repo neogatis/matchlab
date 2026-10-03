@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -85,6 +86,23 @@ class MainActivity : AppCompatActivity() {
                 MatchLabStyle.dp(this@MainActivity, 22),
             )
         })
+
+        val heroImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageBitmap(HeroCoupleAsset.bitmap())
+            background = MatchLabStyle.rounded(
+                MatchLabStyle.SURFACE,
+                MatchLabStyle.dp(this@MainActivity, 22),
+            )
+            clipToOutline = true
+            contentDescription = "Счастливая пара — образ MatchLab"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                MatchLabStyle.dp(this@MainActivity, 220),
+            )
+        }
+        root.addView(heroImage)
+        MatchLabStyle.withMargins(heroImage, top = 0, bottom = 18)
 
         val valueCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
