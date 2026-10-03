@@ -64,7 +64,7 @@
   "push": {
     "token_vault_production": true,
     "fcm_backend_runtime": true,
-    "fcm_credentials_configured": false,
+    "fcm_credentials_configured": true,
     "apns_credentials_configured": false
   }
 }
