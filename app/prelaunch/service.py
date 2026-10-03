@@ -13,6 +13,7 @@ from app.db.models import (
     QuestionnaireVersion,
     User,
 )
+from app.profile.service import profile_completion_state
 from .policy import candidate_output_enabled, feature_flags, prelaunch_mode
 
 
@@ -91,15 +92,16 @@ def waitlist_status(
     if user is None or profile is None:
         raise PrelaunchError("profile_not_found")
 
-    completion = {
-        "profile": bool(profile.profile_completed),
-        "questionnaire": bool(profile.questionnaire_completed),
-        "partner_preferences": bool(profile.partner_preferences_completed),
-        "photos": bool(profile.photos_completed),
-    }
+    completion = profile_completion_state(profile)
     ready = (
         user.status == "ACTIVE"
-        and all(completion.values())
+        and completion["basic"]
+        and completion["details"]
+        and completion["readiness"]
+        and completion["questionnaire"]
+        and completion["partner_preferences"]
+        and completion["photos"]
+        and completion["profile"]
         and profile.eligibility_status == "ACTIVE_FOR_MATCHING"
         and profile.relationship_status in {"ACTIVE_SEARCH", "OPEN_TO_MATCH"}
     )
