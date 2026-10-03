@@ -14,7 +14,7 @@
   "platforms": {
     "ios": {
       "native_client_present": false,
-      "bundle_id": null,
+      "bundle_id": "com.neogatis.matchlab",
       "release_pipeline_present": false,
       "apple_sign_in_production": false,
       "push_delivery_production": false,
@@ -22,7 +22,7 @@
     },
     "android": {
       "native_client_present": false,
-      "application_id": null,
+      "application_id": "com.neogatis.matchlab",
       "release_pipeline_present": false,
       "google_sign_in_production": false,
       "push_delivery_production": false,
@@ -53,5 +53,10 @@
   "review": {
     "store_metadata_complete": false,
     "review_test_account_ready": false
+  },
+  "auth": {
+    "phone_otp_production": true,
+    "google_server_client_id_configured": false,
+    "apple_client_id_configured": false
   }
 }
