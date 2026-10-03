@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import io
 import os
 from dataclasses import dataclass
 from typing import Any
 
 import boto3
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+
+MAX_IMAGE_PIXELS = 40_000_000
 
 
 @dataclass(frozen=True)
@@ -12,6 +17,73 @@ class ObjectMetadata:
     content_length: int
     content_type: str
     etag: str | None
+
+
+class InvalidImageObject(ValueError):
+    pass
+
+
+def sanitize_image_bytes(raw: bytes, expected_mime: str) -> bytes:
+    if not raw:
+        raise InvalidImageObject("empty_image")
+
+    expected_format = {
+        "image/jpeg": "JPEG",
+        "image/png": "PNG",
+        "image/webp": "WEBP",
+    }.get((expected_mime or "").lower())
+    if expected_format is None:
+        raise InvalidImageObject("unsupported_image_type")
+
+    previous_limit = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+    try:
+        try:
+            with Image.open(io.BytesIO(raw)) as probe:
+                if probe.format != expected_format:
+                    raise InvalidImageObject("image_content_type_mismatch")
+                if getattr(probe, "is_animated", False):
+                    raise InvalidImageObject("animated_images_not_supported")
+                width, height = probe.size
+                if width < 200 or height < 200:
+                    raise InvalidImageObject("image_dimensions_too_small")
+                if width * height > MAX_IMAGE_PIXELS:
+                    raise InvalidImageObject("image_dimensions_too_large")
+                probe.verify()
+
+            with Image.open(io.BytesIO(raw)) as source:
+                image = ImageOps.exif_transpose(source)
+                image.load()
+
+                # Re-encoding deliberately drops EXIF/GPS and other source metadata.
+                output = io.BytesIO()
+                if expected_format == "JPEG":
+                    if image.mode not in {"RGB", "L"}:
+                        image = image.convert("RGB")
+                    image.save(
+                        output,
+                        format="JPEG",
+                        quality=92,
+                        optimize=True,
+                        progressive=True,
+                    )
+                elif expected_format == "PNG":
+                    if image.mode not in {"RGB", "RGBA", "L", "LA"}:
+                        image = image.convert("RGBA")
+                    image.save(output, format="PNG", optimize=True)
+                else:
+                    if image.mode not in {"RGB", "RGBA"}:
+                        image = image.convert("RGB")
+                    image.save(output, format="WEBP", quality=92, method=4)
+
+                sanitized = output.getvalue()
+                if not sanitized:
+                    raise InvalidImageObject("image_reencode_failed")
+                return sanitized
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+            raise InvalidImageObject("invalid_image_content") from exc
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous_limit
 
 
 class S3PhotoStorage:
@@ -78,6 +150,42 @@ class S3PhotoStorage:
             content_length=int(result.get("ContentLength") or 0),
             content_type=str(result.get("ContentType") or ""),
             etag=(str(result.get("ETag") or "").strip('"') or None),
+        )
+
+    def get_bytes(self, object_key: str, *, max_bytes: int) -> bytes:
+        result = self.client.get_object(Bucket=self.bucket, Key=object_key)
+        body = result["Body"]
+        raw = body.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            raise InvalidImageObject("image_file_too_large")
+        return raw
+
+    def put_bytes(self, object_key: str, *, raw: bytes, mime: str) -> ObjectMetadata:
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=object_key,
+            Body=raw,
+            ContentType=mime,
+            CacheControl="private, max-age=0, no-store",
+            Metadata={"sanitized": "true"},
+        )
+        return self.head(object_key)
+
+    def sanitize_image(
+        self,
+        object_key: str,
+        *,
+        expected_mime: str,
+        max_bytes: int,
+    ) -> ObjectMetadata:
+        raw = self.get_bytes(object_key, max_bytes=max_bytes)
+        sanitized = sanitize_image_bytes(raw, expected_mime)
+        if len(sanitized) > max_bytes:
+            raise InvalidImageObject("sanitized_image_too_large")
+        return self.put_bytes(
+            object_key,
+            raw=sanitized,
+            mime=expected_mime,
         )
 
     def delete(self, object_key: str) -> None:
