@@ -1,0 +1,39 @@
+name: phase31-prelaunch-ops
+
+on:
+  push:
+    paths:
+      - "app/console/**"
+      - "app/http/**"
+      - "tests/test_phase31_prelaunch_metrics.py"
+      - ".github/workflows/phase31-prelaunch-ops.yml"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matchlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d matchlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/matchlab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-push.txt
+      - run: alembic upgrade head
+      - run: python -m unittest tests.test_phase31_prelaunch_metrics tests.test_http_runtime_contract -v
+      - run: python -m py_compile app/console/metrics.py app/console/dashboard.py app/http/server.py
