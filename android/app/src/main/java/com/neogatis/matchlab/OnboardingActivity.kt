@@ -519,9 +519,10 @@ class OnboardingActivity : AppCompatActivity() {
                             text = option.getString("label")
                             tag = option.getInt("value")
                             textSize = 16f
-                            setPadding(0, 10, 0, 10)
+                            MatchLabStyle.radioOption(this)
                         }
                         group.addView(button)
+                        MatchLabStyle.withMargins(button, top = 8)
                     }
                     root.addView(group)
 
@@ -822,24 +823,40 @@ class OnboardingActivity : AppCompatActivity() {
     private fun addTitle(text: String) {
         root.addView(TextView(this).apply {
             this.text = text
-            textSize = 30f
-            setPadding(0, 0, 0, 12)
+            MatchLabStyle.title(this)
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 22),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 8),
+            )
         })
     }
 
     private fun addText(text: String, size: Float) {
         root.addView(TextView(this).apply {
             this.text = text
+            MatchLabStyle.subtitle(this)
             textSize = size
-            setPadding(0, 4, 0, 20)
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 4),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 14),
+            )
         })
     }
 
     private fun addLabel(text: String) {
         root.addView(TextView(this).apply {
             this.text = text
-            textSize = 15f
-            setPadding(0, 22, 0, 6)
+            MatchLabStyle.label(this)
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 18),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 7),
+            )
         })
     }
 
@@ -852,9 +869,10 @@ class OnboardingActivity : AppCompatActivity() {
             this.hint = hint
             setText(value)
             inputType = inputTypeValue
-            textSize = 17f
+            MatchLabStyle.input(this)
         }
         root.addView(edit)
+        MatchLabStyle.withMargins(edit, top = 6)
         return edit
     }
 
@@ -875,6 +893,7 @@ class OnboardingActivity : AppCompatActivity() {
         spinner.adapter = adapter
         val index = values.indexOfFirst { item -> item.value == selectedValue }
         if (index >= 0) spinner.setSelection(index)
+        MatchLabStyle.spinner(spinner)
         root.addView(spinner)
         return spinner
     }
@@ -896,15 +915,17 @@ class OnboardingActivity : AppCompatActivity() {
         (spinner.selectedItem as Choice).value
 
     private fun addButton(text: String, action: () -> Unit) {
-        root.addView(Button(this).apply {
+        val button = Button(this).apply {
             this.text = text
-            isAllCaps = false
-            setPadding(12, 12, 12, 12)
+            MatchLabStyle.primaryButton(this)
             setOnClickListener { action() }
-        })
+        }
+        root.addView(button)
+        MatchLabStyle.withMargins(button, top = 14)
     }
 
     private fun setStatus(text: String) {
         status.text = text
+        status.visibility = View.VISIBLE
     }
 }
