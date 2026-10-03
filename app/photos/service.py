@@ -19,7 +19,7 @@ from app.db.models import (
     PhotoUploadTicket,
     Profile,
 )
-from .storage import ObjectMetadata, S3PhotoStorage
+from .storage import InvalidImageObject, ObjectMetadata, S3PhotoStorage
 
 
 MIN_PHOTOS = 2
@@ -213,6 +213,24 @@ def finalize_upload(
             storage.delete(ticket.object_key)
         finally:
             raise PhotoError("Uploaded image type does not match the ticket")
+
+    # Validate the actual image payload and rewrite it without EXIF/GPS or
+    # other source metadata before it can enter moderation.
+    try:
+        metadata = storage.sanitize_image(
+            ticket.object_key,
+            expected_mime=ticket.mime,
+            max_bytes=MAX_FILE_BYTES,
+        )
+    except InvalidImageObject as exc:
+        ticket.status = "CANCELLED"
+        db.flush()
+        try:
+            storage.delete(ticket.object_key)
+        finally:
+            raise PhotoError(str(exc)) from exc
+    except Exception as exc:
+        raise UploadTicketError("Uploaded image could not be sanitized") from exc
 
     max_order = db.scalar(
         select(func.max(Photo.sort_order)).where(Photo.user_id == user_id)
