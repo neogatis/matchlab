@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from contextlib import contextmanager
 from datetime import date, datetime
 from http import HTTPStatus
@@ -33,6 +35,7 @@ from app.photos.service import (
     UploadTicketError,
     delete_photo,
     finalize_upload,
+    process_deletion_outbox,
     list_owner_photos,
     moderate_photo,
     photo_progress,
@@ -55,6 +58,8 @@ from app.privacy.service import (
     DeletionAlreadyRequested,
     PrivacyError,
     export_user_data,
+    process_due_deletions,
+    process_retention_cleanup,
     request_account_deletion,
     retention_policy,
 )
@@ -175,6 +180,57 @@ def photo_storage_configured() -> bool:
         "AWS_SECRET_ACCESS_KEY",
     )
     return all(os.environ.get(name, "").strip() for name in required)
+
+
+def run_maintenance_once() -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    with runtime().db() as db:
+        result["privacy_deletions"] = process_due_deletions(db, limit=100)
+        result["retention"] = process_retention_cleanup(db)
+        if photo_storage_configured():
+            result["photo_deletions"] = process_deletion_outbox(
+                db,
+                storage=photo_storage(),
+                limit=100,
+            )
+        else:
+            result["photo_deletions"] = {"skipped": "photo_storage_not_configured"}
+    return result
+
+
+def _maintenance_loop() -> None:
+    try:
+        interval = int(os.environ.get("MAINTENANCE_INTERVAL_SECONDS", "3600"))
+    except ValueError:
+        interval = 3600
+    interval = max(300, interval)
+
+    # Give the HTTP listener time to become healthy before maintenance work.
+    time.sleep(15)
+    while True:
+        try:
+            result = run_maintenance_once()
+            print(
+                "maintenance completed:",
+                json.dumps(result, ensure_ascii=False, default=_json_default),
+                flush=True,
+            )
+        except Exception as exc:
+            print(
+                f"maintenance failed: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+        time.sleep(interval)
+
+
+def start_maintenance_thread() -> threading.Thread:
+    thread = threading.Thread(
+        target=_maintenance_loop,
+        name="matchlab-maintenance",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
@@ -709,6 +765,7 @@ def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), MatchLabHandler)
+    start_maintenance_thread()
     print(f"MatchLab PostgreSQL HTTP runtime listening on {host}:{port}", flush=True)
     server.serve_forever()
 
