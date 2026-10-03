@@ -20,9 +20,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.ArrayDeque
 
 class OnboardingActivity : AppCompatActivity() {
     data class Choice(val label: String, val value: String) {
@@ -35,6 +38,11 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private var currentStep: Int = 1
     private val totalSteps: Int = 7
+    private val questionnaireQueue = ArrayDeque<JSONObject>()
+    private val questionnaireAnsweredLocally = mutableSetOf<String>()
+    private val questionnaireSaveMutex = Mutex()
+    private var activeQuestionToken: String? = null
+    private var questionnaireState: JSONObject? = null
 
     private val photoPicker = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -471,88 +479,234 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun renderQuestionnaire() {
         lifecycleScope.launch {
-            renderLoading("Загружаем вопросы…")
-            runCatching { api.getQuestionnaire() }
-                .onSuccess { payload ->
-                    val progress = payload.getJSONObject("progress")
-                    val answers = payload.optJSONObject("answers") ?: JSONObject()
-                    val sections = payload.getJSONArray("sections")
+            renderLoading("Собираем ваш персональный маршрут вопросов…")
+            questionnaireQueue.clear()
+            questionnaireAnsweredLocally.clear()
+            activeQuestionToken = null
+            runCatching {
+                api.getAdaptiveQuestionnaire()
+            }.onSuccess { payload ->
+                ingestQuestionnaireState(payload)
+            }.onFailure { error ->
+                renderError("Не удалось загрузить анкету: " + error.message)
+            }
+        }
+    }
 
-                    var nextQuestion: JSONObject? = null
-                    var sectionName = ""
-                    loop@ for (i in 0 until sections.length()) {
-                        val section = sections.getJSONObject(i)
-                        val questions = section.getJSONArray("questions")
-                        for (j in 0 until questions.length()) {
-                            val question = questions.getJSONObject(j)
-                            val key = question.getLong("id").toString()
-                            if (!answers.has(key)) {
-                                nextQuestion = question
-                                sectionName = section.getString("category")
-                                break@loop
-                            }
-                        }
-                    }
+    private fun ingestQuestionnaireState(payload: JSONObject) {
+        questionnaireState = payload
 
-                    val question = nextQuestion
-                    if (question == null) {
-                        loadState()
-                        return@onSuccess
-                    }
+        if (payload.optBoolean("complete")) {
+            questionnaireQueue.clear()
+            activeQuestionToken = null
+            loadState()
+            return
+        }
 
-                    reset(
-                        "Анкета совместимости",
-                        sectionName + " · " +
-                            (progress.optInt("required_answered") + 1).toString() +
-                            " из " + progress.optInt("required_total").toString()
+        fun enqueue(question: JSONObject?) {
+            if (question == null) return
+            val token = question.optString("token")
+            if (token.isBlank()) return
+            if (token in questionnaireAnsweredLocally) return
+            if (token == activeQuestionToken) return
+            if (questionnaireQueue.any { it.optString("token") == token }) return
+            questionnaireQueue.addLast(question)
+        }
+
+        enqueue(payload.optJSONObject("question"))
+        val prefetched = payload.optJSONArray("prefetch") ?: JSONArray()
+        for (i in 0 until prefetched.length()) {
+            enqueue(prefetched.optJSONObject(i))
+        }
+
+        if (activeQuestionToken == null) {
+            showNextQuestionnaireQuestion()
+        }
+    }
+
+    private fun showNextQuestionnaireQuestion() {
+        val question = questionnaireQueue.pollFirst()
+        if (question == null) {
+            reset(
+                "Анкета совместимости",
+                "Подбираем следующий вопрос именно под ваши предыдущие ответы."
+            )
+            setStatus("Ещё секунду — уточняем следующую тему…")
+            return
+        }
+
+        activeQuestionToken = question.getString("token")
+        val state = questionnaireState ?: JSONObject()
+        val progressData = state.optJSONObject("progress") ?: JSONObject()
+        val percent = progressData.optInt("percent", 0)
+        val phase = state.optString("phase", "BASE")
+        val axisLabel = question.optString("axis_label", "О вас")
+
+        reset(
+            "Познакомимся глубже",
+            if (phase == "ADAPTIVE")
+                "Теперь вопросы подстраиваются под ваши предыдущие ответы."
+            else
+                "Сначала соберём основу психологического профиля."
+        )
+
+        val progressLabel = TextView(this).apply {
+            text = "Профиль сформирован примерно на " + percent.toString() + "%"
+            MatchLabStyle.subtitle(this)
+            textSize = 13f
+        }
+        root.addView(progressLabel)
+
+        val questionnaireProgress = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal,
+        ).apply {
+            max = 100
+            this.progress = percent
+            minimumHeight = MatchLabStyle.dp(this@OnboardingActivity, 6)
+        }
+        MatchLabStyle.progress(questionnaireProgress)
+        root.addView(questionnaireProgress)
+        MatchLabStyle.withMargins(questionnaireProgress, top = 7, bottom = 16)
+
+        val axisPill = TextView(this).apply {
+            text = axisLabel
+            textSize = 13f
+            typeface = Typeface.create("sans", Typeface.BOLD)
+            setTextColor(MatchLabStyle.color(MatchLabStyle.CORAL_DARK))
+            background = MatchLabStyle.rounded(
+                MatchLabStyle.SURFACE_SOFT,
+                MatchLabStyle.dp(this@OnboardingActivity, 18),
+            )
+            setPadding(
+                MatchLabStyle.dp(this@OnboardingActivity, 13),
+                MatchLabStyle.dp(this@OnboardingActivity, 7),
+                MatchLabStyle.dp(this@OnboardingActivity, 13),
+                MatchLabStyle.dp(this@OnboardingActivity, 7),
+            )
+        }
+        root.addView(axisPill)
+
+        val questionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                MatchLabStyle.dp(this@OnboardingActivity, 20),
+                MatchLabStyle.dp(this@OnboardingActivity, 20),
+                MatchLabStyle.dp(this@OnboardingActivity, 20),
+                MatchLabStyle.dp(this@OnboardingActivity, 20),
+            )
+        }
+        MatchLabStyle.card(questionCard)
+        questionCard.addView(TextView(this).apply {
+            text = question.getString("text")
+            textSize = 21f
+            typeface = Typeface.create("serif", Typeface.BOLD)
+            setTextColor(MatchLabStyle.color(MatchLabStyle.NAVY))
+            setLineSpacing(0f, 1.08f)
+        })
+        root.addView(questionCard)
+        MatchLabStyle.withMargins(questionCard, top = 12, bottom = 8)
+
+        root.addView(TextView(this).apply {
+            text = "Что ближе именно вам?"
+            MatchLabStyle.label(this)
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 8),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 3),
+            )
+        })
+
+        val options = question.getJSONArray("options")
+        for (i in 0 until options.length()) {
+            val option = options.getJSONObject(i)
+            val button = RadioButton(this).apply {
+                id = View.generateViewId()
+                text = option.getString("label")
+                tag = option.getInt("value")
+                textSize = 15f
+                MatchLabStyle.radioOption(this)
+                setOnClickListener {
+                    submitQuestionnaireAnswerInstant(
+                        question = question,
+                        value = option.getInt("value"),
                     )
-                    addText(question.getString("text"), 20f)
-
-                    val group = RadioGroup(this@OnboardingActivity).apply {
-                        orientation = RadioGroup.VERTICAL
-                    }
-                    val options = question.getJSONArray("options")
-                    for (i in 0 until options.length()) {
-                        val option = options.getJSONObject(i)
-                        val button = RadioButton(this@OnboardingActivity).apply {
-                            id = View.generateViewId()
-                            text = option.getString("label")
-                            tag = option.getInt("value")
-                            textSize = 16f
-                            MatchLabStyle.radioOption(this)
-                        }
-                        group.addView(button)
-                        MatchLabStyle.withMargins(button, top = 8)
-                    }
-                    root.addView(group)
-
-                    addButton("Ответить и дальше") {
-                        val checkedId = group.checkedRadioButtonId
-                        if (checkedId == -1) {
-                            setStatus("Выберите вариант ответа.")
-                            return@addButton
-                        }
-                        val checked = group.findViewById<RadioButton>(checkedId)
-                        lifecycleScope.launch {
-                            setStatus("Сохраняем ответ…")
-                            runCatching {
-                                api.saveQuestionnaireAnswer(
-                                    question.getLong("id"),
-                                    checked.tag as Int,
-                                )
-                            }.onSuccess {
-                                renderQuestionnaire()
-                            }.onFailure { error ->
-                                setStatus("Ошибка: " + error.message)
-                            }
-                        }
-                    }
-
-                    addButton("Вернуться позже") { finish() }
                 }
-                .onFailure { error ->
-                    renderError("Не удалось загрузить анкету: " + error.message)
+            }
+            root.addView(button)
+            MatchLabStyle.withMargins(button, top = 8)
+        }
+
+        root.addView(TextView(this).apply {
+            text = "Нажмите вариант — следующий вопрос откроется сразу."
+            MatchLabStyle.subtitle(this)
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setPadding(
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 12),
+                0,
+                MatchLabStyle.dp(this@OnboardingActivity, 4),
+            )
+        })
+
+        val later = Button(this).apply {
+            text = "Продолжить позже"
+            MatchLabStyle.secondaryButton(this)
+            setOnClickListener { finish() }
+        }
+        root.addView(later)
+        MatchLabStyle.withMargins(later, top = 10)
+    }
+
+    private fun submitQuestionnaireAnswerInstant(
+        question: JSONObject,
+        value: Int,
+    ) {
+        val token = question.getString("token")
+        if (token in questionnaireAnsweredLocally) return
+
+        questionnaireAnsweredLocally.add(token)
+        activeQuestionToken = null
+
+        if (questionnaireQueue.isNotEmpty()) {
+            showNextQuestionnaireQuestion()
+        } else {
+            reset(
+                "Анкета совместимости",
+                "Подбираем следующий вопрос с учётом вашего ответа."
+            )
+            setStatus("Формируем следующую тему…")
+        }
+
+        lifecycleScope.launch {
+            questionnaireSaveMutex.withLock {
+                runCatching {
+                    api.answerAdaptiveQuestion(
+                        questionToken = token,
+                        value = value,
+                    )
+                }.onSuccess { payload ->
+                    ingestQuestionnaireState(payload)
+                }.onFailure { error ->
+                    questionnaireAnsweredLocally.remove(token)
+                    setStatus(
+                        "Не удалось сохранить ответ. Проверьте интернет и попробуйте ещё раз: " +
+                            error.message
+                    )
+                    lifecycleScope.launch {
+                        runCatching {
+                            api.getAdaptiveQuestionnaire()
+                        }.onSuccess { payload ->
+                            questionnaireQueue.clear()
+                            activeQuestionToken = null
+                            ingestQuestionnaireState(payload)
+                        }
+                    }
                 }
+            }
         }
     }
 
