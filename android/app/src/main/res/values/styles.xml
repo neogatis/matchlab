@@ -1,6 +1,13 @@
 <resources>
-    <style name="Theme.MatchLab" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.MatchLab" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/matchlab_coral</item>
+        <item name="android:windowBackground">@color/matchlab_background</item>
+        <item name="android:navigationBarColor">@color/matchlab_background</item>
+        <item name="android:statusBarColor">@color/matchlab_background</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>
