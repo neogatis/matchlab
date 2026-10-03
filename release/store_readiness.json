@@ -28,7 +28,11 @@
       "push_delivery_production": true,
       "billing_verification_production": false,
       "debug_build_pipeline_present": true,
-      "debug_signing_sha1": "EF:73:1B:AF:97:46:D6:4D:D7:5C:9A:C6:9B:43:E5:B9:73:09:32:26"
+      "debug_signing_sha1": "EF:73:1B:AF:97:46:D6:4D:D7:5C:9A:C6:9B:43:E5:B9:73:09:32:26",
+      "onboarding_flow": true,
+      "questionnaire_flow": true,
+      "partner_preferences_flow": true,
+      "photo_upload_flow": true
     }
   },
   "public_runtime": {
@@ -37,7 +41,8 @@
     "photo_object_storage": true,
     "production_url": "https://matchlab-production.up.railway.app",
     "railway_healthcheck_verified": true,
-    "neon_production_branch": "production"
+    "neon_production_branch": "production",
+    "server_phase": 31
   },
   "legal": {
     "privacy_policy_url": "https://matchlab-production.up.railway.app/privacy",
@@ -70,5 +75,11 @@
     "apns_credentials_configured": false,
     "fcm_end_to_end_verified": true,
     "last_verified_device_id": 1
+  },
+  "operations": {
+    "photo_moderation_console": true,
+    "photo_moderation_push": true,
+    "prelaunch_quality_dashboard": true,
+    "resumable_onboarding": true
   }
 }
