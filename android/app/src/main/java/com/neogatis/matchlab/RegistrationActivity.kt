@@ -319,7 +319,7 @@ class RegistrationActivity : AppCompatActivity() {
 
     private fun onRegistered(userId: Long) {
         startActivity(Intent(this, OnboardingActivity::class.java))
-        finishAffinity()
+        finish()
     }
 
     private fun showStatus(message: String) {
