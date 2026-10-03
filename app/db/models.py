@@ -278,6 +278,81 @@ class QuestionnaireAnswer(Base):
     answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class AdaptiveQuestionnaireQuestion(Base):
+    __tablename__ = "adaptive_questionnaire_questions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    axis_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    category_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="BANK")
+    model: Mapped[str | None] = mapped_column(String(120))
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    generator_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "position",
+            name="uq_adaptive_questions_user_position",
+        ),
+        CheckConstraint(
+            "source IN ('BANK','OPENAI')",
+            name="ck_adaptive_questions_source",
+        ),
+        CheckConstraint(
+            "position > 0",
+            name="ck_adaptive_questions_position_positive",
+        ),
+        Index(
+            "ix_adaptive_questions_user_axis",
+            "user_id",
+            "axis_key",
+        ),
+    )
+
+
+class AdaptiveQuestionnaireAnswer(Base):
+    __tablename__ = "adaptive_questionnaire_answers"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    adaptive_question_id: Mapped[int] = mapped_column(
+        ForeignKey("adaptive_questionnaire_questions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    value_int: Mapped[int] = mapped_column(Integer, nullable=False)
+    answered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "value_int BETWEEN 1 AND 5",
+            name="ck_adaptive_answers_scale",
+        ),
+        Index(
+            "ix_adaptive_answers_user_answered",
+            "user_id",
+            "answered_at",
+        ),
+    )
+
+
 class PartnerPreference(Base):
     __tablename__ = "partner_preferences"
 
