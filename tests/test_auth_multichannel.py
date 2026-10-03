@@ -1,5 +1,7 @@
+import json
 import os
 import unittest
+from unittest.mock import patch
 from datetime import timedelta
 
 from sqlalchemy import create_engine, select, text
@@ -7,7 +9,22 @@ from sqlalchemy.orm import Session
 
 from app.auth import service as auth
 from app.auth.oauth import VerifiedIdentity, link_identity, login_or_register_identity
+from app.auth.sms import MobizonSmsSender
 from app.db.models import AuthIdentity, User
+
+
+class FakeHttpResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class FakeSmsSender:
@@ -32,6 +49,21 @@ class MultichannelAuthTests(unittest.TestCase):
                 "referrals","product_events","users"
             ]:
                 c.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+
+    def test_mobizon_sender_parses_success_response(self):
+        sender = MobizonSmsSender(api_key="test-key")
+        with patch(
+            "urllib.request.urlopen",
+            return_value=FakeHttpResponse(
+                {"code": 0, "data": {"messageId": 12345}, "message": ""}
+            ),
+        ):
+            result = sender.send_otp(
+                phone_e164="+77011234567",
+                code="123456",
+            )
+        self.assertEqual(result.provider, "MOBIZON")
+        self.assertEqual(result.message_id, "12345")
 
     def test_phone_otp_registers_and_logs_in_user(self):
         sender = FakeSmsSender()
