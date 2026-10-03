@@ -1430,6 +1430,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             ProfileError,
             InvalidAnswer,
             QuestionnaireError,
+            AdaptiveQuestionnaireError,
             InvalidPreference,
             PreferenceError,
             PrelaunchError,
