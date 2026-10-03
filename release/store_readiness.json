@@ -3,8 +3,14 @@
   "minimum_age": 18,
   "submission_ready": false,
   "product_principle": "Small number of mutually relevant candidates instead of an endless swipe feed.",
-  "plans": ["FREE", "PREMIUM", "PREMIUM_PLUS"],
-  "one_time_products": ["DEEP_COMPATIBILITY_REPORT"],
+  "plans": [
+    "FREE",
+    "PREMIUM",
+    "PREMIUM_PLUS"
+  ],
+  "one_time_products": [
+    "DEEP_COMPATIBILITY_REPORT"
+  ],
   "platforms": {
     "ios": {
       "native_client_present": false,
@@ -31,9 +37,10 @@
   "legal": {
     "privacy_policy_url": null,
     "terms_url": null,
-    "data_export_user_flow": false,
-    "account_deletion_user_flow": false,
-    "retention_policy_published": false
+    "data_export_user_flow": true,
+    "account_deletion_user_flow": true,
+    "retention_policy_published": false,
+    "retention_policy_implemented": true
   },
   "safety": {
     "photo_moderation_domain": true,
