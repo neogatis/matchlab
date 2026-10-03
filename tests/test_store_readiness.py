@@ -38,12 +38,19 @@ class StoreReadinessTests(unittest.TestCase):
         self.assertIn("secure_http_boundary",result.blockers)
         self.assertIn("ios_build_pipeline",result.blockers)
         self.assertIn("android_build_pipeline",result.blockers)
-        self.assertIn("data_export_flow",result.blockers)
+        self.assertIn("privacy_policy_url",result.blockers)
+        self.assertIn("terms_url",result.blockers)
 
     def test_existing_safety_foundations_are_recognized(self):
         result=current_matchlab_readiness()
         self.assertIn("photo_moderation",result.completed)
         self.assertIn("block_and_report",result.completed)
+
+    def test_phase26_privacy_foundations_are_recognized(self):
+        result=current_matchlab_readiness()
+        self.assertIn("account_deletion_flow",result.completed)
+        self.assertIn("data_export_flow",result.completed)
+        self.assertIn("retention_policy",result.completed)
 
     def test_manifest_matches_fail_closed_readiness(self):
         manifest=json.loads(
