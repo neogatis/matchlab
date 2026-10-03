@@ -1,3 +1,5 @@
 -r requirements-postgres.txt
 argon2-cffi==23.1.0
 email-validator==2.2.0
+phonenumbers==9.0.15
+PyJWT[crypto]==2.10.1
