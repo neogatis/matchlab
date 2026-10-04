@@ -10,7 +10,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
@@ -44,7 +44,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Market, Notification, Photo, Profile, PushDevice, User
+from app.db.models import AuthIdentity, Market, Match, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.console.dashboard import prelaunch_dashboard_html
@@ -66,6 +66,25 @@ from app.photos.service import (
     set_main_photo,
 )
 from app.photos.storage import S3PhotoStorage
+from app.chat.service import (
+    ChatError,
+    ChatUnavailable,
+    MessageValidationError,
+    NotConversationParticipant,
+    get_or_create_conversation,
+    list_conversations,
+    list_messages,
+    mark_read,
+    send_message,
+)
+from app.interests.service import (
+    InterestActionsDisabled,
+    InterestError,
+    InterestUnavailable,
+    PairAlreadyMatched,
+    record_decision,
+)
+from app.matching.service import rank_candidates
 from app.push.fcm import FcmProviderClient
 from app.push.service import (
     PushError,
@@ -103,6 +122,7 @@ from app.profile.service import (
     set_readiness,
     set_relationship_state,
     upsert_basic_profile,
+    user_age,
 )
 from app.questionnaire.adaptive import (
     AdaptiveQuestionnaireError,
@@ -268,6 +288,81 @@ def phone_auth_configured() -> bool:
     return False
 
 
+def _candidate_photo_urls(db, user_id: int, *, limit: int = 5) -> list[str]:
+    photos = list(
+        db.execute(
+            select(Photo)
+            .where(
+                Photo.user_id == user_id,
+                Photo.moderation_status == "APPROVED",
+                Photo.storage_key.is_not(None),
+            )
+            .order_by(Photo.is_main.desc(), Photo.sort_order, Photo.id)
+            .limit(limit)
+        ).scalars()
+    )
+    if not photos or not photo_storage_configured():
+        return []
+    storage = photo_storage()
+    return [
+        storage.presign_download(photo.storage_key)
+        for photo in photos
+        if photo.storage_key
+    ]
+
+
+def _candidate_profile_payload(
+    db,
+    *,
+    user_id: int,
+    scoring: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise ApiError(HTTPStatus.NOT_FOUND, "profile_not_found")
+    market = db.get(Market, profile.market_id) if profile.market_id is not None else None
+    age = user_age(profile.dob) if profile.dob is not None else None
+    result: dict[str, Any] = {
+        "user_id": user_id,
+        "display_name": profile.display_name,
+        "age": age,
+        "city": profile.city or (market.name if market else ""),
+        "dating_goal": profile.dating_goal,
+        "bio": profile.bio,
+        "height": profile.height,
+        "children_status": profile.children_status,
+        "children_plans": profile.children_plans,
+        "smoking": profile.smoking,
+        "alcohol": profile.alcohol,
+        "lifestyle": profile.lifestyle,
+        "religion": profile.religion,
+        "photos": _candidate_photo_urls(db, user_id),
+    }
+    if scoring:
+        result.update(
+            {
+                "compatibility_score": scoring.get("compatibility_score"),
+                "mutual_fit_score": scoring.get("final_mutual_fit_score"),
+                "distance_km": scoring.get("distance_km"),
+                "category_scores": scoring.get("category_scores") or {},
+                "mutual_preference_score": scoring.get("mutual_preference_score"),
+                "readiness_score": scoring.get("readiness_score"),
+            }
+        )
+    return result
+
+
+def _match_payload(db, *, match: Match, viewer_id: int) -> dict[str, Any]:
+    other_id = match.user2 if match.user1 == viewer_id else match.user1
+    return {
+        "match_id": match.id,
+        "compatibility_score": match.compatibility_score,
+        "mutual_fit_score": match.mutual_fit_score,
+        "created_at": match.created_at,
+        "profile": _candidate_profile_payload(db, user_id=other_id),
+    }
+
+
 def social_auth_configured() -> dict[str, bool]:
     def configured(provider: str) -> bool:
         try:
@@ -351,7 +446,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/34"
+    server_version = "MatchLab/35"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -447,7 +542,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 34,
+                        "phase": 35,
                         "adaptive_questionnaire": True,
                         "openai_adaptive_configured": bool(
                             os.environ.get("OPENAI_API_KEY", "").strip()
@@ -1386,6 +1481,162 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/discovery/candidates":
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    limit = int((query.get("limit") or ["5"])[0])
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "invalid_limit") from exc
+                ranked = rank_candidates(
+                    db,
+                    user_id=principal.user_id,
+                    limit=limit,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "candidates": [
+                            _candidate_profile_payload(
+                                db,
+                                user_id=int(item["user_id"]),
+                                scoring=item,
+                            )
+                            for item in ranked
+                        ],
+                        "enabled": bool(ranked) or feature_flags(db).get("candidate_output", False),
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/discovery/decision":
+                body = self._body()
+                action = str(body.get("action", "")).upper()
+                if action not in {"INTERESTED", "SKIPPED"}:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "invalid_candidate_action")
+                result = record_decision(
+                    db,
+                    from_user=principal.user_id,
+                    to_user=int(body.get("candidate_user_id", 0)),
+                    state=action,
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/matches":
+                matches = list(
+                    db.execute(
+                        select(Match)
+                        .where(
+                            (Match.user1 == principal.user_id)
+                            | (Match.user2 == principal.user_id)
+                        )
+                        .order_by(Match.created_at.desc(), Match.id.desc())
+                        .limit(100)
+                    ).scalars()
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "matches": [
+                            _match_payload(db, match=item, viewer_id=principal.user_id)
+                            for item in matches
+                        ]
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/matches/conversation":
+                body = self._body()
+                conversation = get_or_create_conversation(
+                    db,
+                    match_id=int(body.get("match_id", 0)),
+                    user_id=principal.user_id,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "conversation_id": conversation.id,
+                        "match_id": conversation.match_id,
+                    },
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/chat/conversations":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "conversations": list_conversations(
+                            db,
+                            user_id=principal.user_id,
+                            limit=50,
+                        )
+                    },
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/chat/messages":
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    conversation_id = int((query.get("conversation_id") or ["0"])[0])
+                    limit = int((query.get("limit") or ["50"])[0])
+                    before_raw = (query.get("before_id") or [None])[0]
+                    before_id = int(before_raw) if before_raw not in (None, "") else None
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "invalid_chat_query") from exc
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "messages": list_messages(
+                            db,
+                            conversation_id=conversation_id,
+                            user_id=principal.user_id,
+                            limit=limit,
+                            before_id=before_id,
+                        )
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/chat/messages":
+                body = self._body()
+                message = send_message(
+                    db,
+                    conversation_id=int(body.get("conversation_id", 0)),
+                    sender_id=principal.user_id,
+                    body=str(body.get("body", "")),
+                    client_message_id=body.get("client_message_id"),
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "message": {
+                            "id": message.id,
+                            "sender_id": message.sender,
+                            "body": message.body,
+                            "created_at": message.created_at,
+                            "read_at": message.read_at,
+                            "is_mine": True,
+                        }
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/chat/read":
+                body = self._body()
+                raw_through = body.get("through_message_id")
+                changed = mark_read(
+                    db,
+                    conversation_id=int(body.get("conversation_id", 0)),
+                    user_id=principal.user_id,
+                    through_message_id=(
+                        int(raw_through)
+                        if raw_through not in (None, "")
+                        else None
+                    ),
+                )
+                self._send_json(HTTPStatus.OK, {"ok": True, "marked_read": changed})
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/waitlist/status":
                 self._send_json(
                     HTTPStatus.OK,
@@ -1423,6 +1674,12 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         except DeletionAlreadyRequested as exc:
             self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
         except (OAuthError, SmsError, InvalidOrExpiredChallenge, PushError) as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except InterestActionsDisabled as exc:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except (InterestUnavailable, PairAlreadyMatched, ChatUnavailable) as exc:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except (InterestError, ChatError, MessageValidationError, NotConversationParticipant) as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except PhotoNotFound as exc:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
