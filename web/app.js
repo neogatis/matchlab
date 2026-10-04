@@ -572,7 +572,7 @@
         '<div class="compat-pill">' + esc(score) + '% совместимость</div>' +
       '</div>' +
       '<div class="candidate-body">' +
-        '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div></div></div>' +
+        '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div>' + (c.is_test_profile?'<span class="test-profile-badge">Тестовый профиль</span>':'') + '</div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
         '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее о человеке →</button>' +

@@ -8,7 +8,7 @@ import threading
 import time
 from email.message import EmailMessage
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -51,7 +51,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Block, Market, Match, Notification, Photo, Profile, PushDevice, User
+from app.db.models import AuthIdentity, Block, Interest, Market, Match, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.console.dashboard import prelaunch_dashboard_html
@@ -375,6 +375,136 @@ def _candidate_photo_urls(db, user_id: int, *, limit: int = 5) -> list[str]:
         for photo in photos
         if photo.storage_key
     ]
+
+
+
+TEST_PROFILE_EMAILS = {
+    "matchlab.virtual.anna@test.invalid": {
+        "photo": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1200&q=86",
+        "score": 92,
+        "categories": {
+            "values": 95,
+            "relationship": 91,
+            "communication": 94,
+            "family": 88,
+            "lifestyle": 78,
+        },
+    },
+    "matchlab.virtual.alina@test.invalid": {
+        "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=86",
+        "score": 86,
+        "categories": {
+            "values": 89,
+            "relationship": 84,
+            "communication": 90,
+            "family": 82,
+            "lifestyle": 76,
+        },
+    },
+}
+
+
+def _test_viewer_enabled(user_id: int) -> bool:
+    raw = os.environ.get("MATCHLAB_TEST_VIEWER_USER_IDS", "")
+    allowed = {
+        int(item.strip())
+        for item in raw.split(",")
+        if item.strip().isdigit()
+    }
+    return user_id in allowed
+
+
+def _test_profile_meta(db, user_id: int) -> dict[str, Any] | None:
+    user = db.get(User, user_id)
+    if user is None:
+        return None
+    return TEST_PROFILE_EMAILS.get(user.email)
+
+
+def _test_candidate_payloads(db, *, viewer_id: int) -> list[dict[str, Any]]:
+    if not _test_viewer_enabled(viewer_id):
+        return []
+
+    rows = list(
+        db.execute(
+            select(User).where(User.email.in_(tuple(TEST_PROFILE_EMAILS)))
+        ).scalars()
+    )
+    payloads: list[dict[str, Any]] = []
+    for user in rows:
+        decision = db.get(Interest, (viewer_id, user.id))
+        if decision is not None:
+            if decision.state == "INTERESTED":
+                continue
+            if (
+                decision.state == "SKIPPED"
+                and (
+                    decision.snooze_until is None
+                    or decision.snooze_until > datetime.now(timezone.utc)
+                )
+            ):
+                continue
+
+        meta = TEST_PROFILE_EMAILS[user.email]
+        payload = _candidate_profile_payload(
+            db,
+            user_id=user.id,
+            scoring={
+                "compatibility_score": meta["score"],
+                "final_mutual_fit_score": meta["score"],
+                "category_scores": meta["categories"],
+                "mutual_preference_score": 88,
+                "readiness_score": 95,
+                "distance_km": 0.0,
+            },
+        )
+        payload["photos"] = [meta["photo"]]
+        payload["is_test_profile"] = True
+        payloads.append(payload)
+    return payloads
+
+
+def _record_test_decision(
+    db,
+    *,
+    viewer_id: int,
+    candidate_user_id: int,
+    state: str,
+) -> dict[str, Any] | None:
+    if not _test_viewer_enabled(viewer_id):
+        return None
+    if _test_profile_meta(db, candidate_user_id) is None:
+        return None
+
+    now = datetime.now(timezone.utc)
+    row = db.get(Interest, (viewer_id, candidate_user_id))
+    changed = row is None or row.state != state
+    if row is None:
+        row = Interest(
+            from_user=viewer_id,
+            to_user=candidate_user_id,
+            state=state,
+            source_algorithm_version="test-profile-v1",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        row.state = state
+        row.source_algorithm_version = "test-profile-v1"
+        row.updated_at = now
+
+    row.snooze_until = now + timedelta(days=30) if state == "SKIPPED" else None
+    db.flush()
+    return {
+        "state": state,
+        "changed": changed,
+        "mutual_match": False,
+        "match_id": None,
+        "candidate_user_id": candidate_user_id,
+        "test_profile": True,
+        "snooze_until": row.snooze_until,
+    }
 
 
 def _candidate_profile_payload(
@@ -1777,18 +1907,29 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     user_id=principal.user_id,
                     limit=limit,
                 )
+                candidates = [
+                    _candidate_profile_payload(
+                        db,
+                        user_id=int(item["user_id"]),
+                        scoring=item,
+                    )
+                    for item in ranked
+                ]
+                existing_ids = {int(item["user_id"]) for item in candidates}
+                for item in _test_candidate_payloads(
+                    db,
+                    viewer_id=principal.user_id,
+                ):
+                    if int(item["user_id"]) not in existing_ids:
+                        candidates.append(item)
+                    if len(candidates) >= limit:
+                        break
                 self._send_json(
                     HTTPStatus.OK,
                     {
-                        "candidates": [
-                            _candidate_profile_payload(
-                                db,
-                                user_id=int(item["user_id"]),
-                                scoring=item,
-                            )
-                            for item in ranked
-                        ],
-                        "enabled": feature_flags(db).get("candidate_output_enabled", False),
+                        "candidates": candidates,
+                        "enabled": feature_flags(db).get("candidate_output_enabled", False)
+                        or bool(_test_candidate_payloads(db, viewer_id=principal.user_id)),
                     },
                 )
                 return
@@ -1798,12 +1939,20 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 action = str(body.get("action", "")).upper()
                 if action not in {"INTERESTED", "SKIPPED"}:
                     raise ApiError(HTTPStatus.BAD_REQUEST, "invalid_candidate_action")
-                result = record_decision(
+                candidate_user_id = int(body.get("candidate_user_id", 0))
+                result = _record_test_decision(
                     db,
-                    from_user=principal.user_id,
-                    to_user=int(body.get("candidate_user_id", 0)),
+                    viewer_id=principal.user_id,
+                    candidate_user_id=candidate_user_id,
                     state=action,
                 )
+                if result is None:
+                    result = record_decision(
+                        db,
+                        from_user=principal.user_id,
+                        to_user=candidate_user_id,
+                        state=action,
+                    )
                 self._send_json(HTTPStatus.OK, result)
                 return
 
