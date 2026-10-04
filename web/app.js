@@ -275,7 +275,8 @@
   async function afterAuth() {
     state.authenticated = true;
     await loadMe();
-    setRoute("home");
+    const done = !!state.onboarding?.completion?.profile;
+    setRoute(done ? "home" : "onboarding");
   }
 
   async function loadMe() {
@@ -570,6 +571,237 @@
     }catch(e){alert("Не удалось отправить: "+e.message)}
   }
 
+
+  const ONBOARDING_STEPS = [
+    ["basic","О вас"],
+    ["relationship","Статус"],
+    ["readiness","Готовность"],
+    ["details","Образ жизни"],
+    ["questionnaire","Анкета"],
+    ["partner_preferences","Кого ищете"],
+    ["photos","Фото"],
+  ];
+
+  const pick = (id) => document.getElementById(id);
+  const selectHtml = (id, value, options) =>
+    '<select class="input" id="'+id+'">'+options.map(([v,l]) =>
+      '<option value="'+esc(v)+'" '+(String(value||"")===String(v)?"selected":"")+'>'+esc(l)+'</option>'
+    ).join("")+'</select>';
+
+  function firstIncompleteStep() {
+    const c=state.onboarding?.completion||{};
+    return (ONBOARDING_STEPS.find(([key])=>!c[key])||["photos"])[0];
+  }
+
+  function onboardingChrome(step, body) {
+    const idx=Math.max(0,ONBOARDING_STEPS.findIndex(([key])=>key===step));
+    const pct=Math.round((idx/ONBOARDING_STEPS.length)*100);
+    return '<main class="onboarding-page">'+
+      '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div>'+
+      '<button class="ghost" id="onboarding-exit">Позже</button></header>'+
+      '<section class="onboarding-shell">'+
+        '<div class="onboarding-progress"><div class="progress-copy"><span>Шаг '+(idx+1)+' из '+ONBOARDING_STEPS.length+'</span><b>'+esc(ONBOARDING_STEPS[idx]?.[1]||"Анкета")+'</b></div>'+
+        '<div class="progress-track"><i style="width:'+pct+'%"></i></div></div>'+
+        body+
+        '<div id="onboarding-status" class="status" hidden></div>'+
+      '</section>'+
+    '</main>';
+  }
+
+  function onboardingStatus(message,error=false){
+    const el=pick("onboarding-status");
+    if(!el)return;
+    el.className="status"+(error?" error":"");
+    el.textContent=message;
+    el.hidden=false;
+  }
+
+  async function renderOnboarding(force=false) {
+    clearPoller();
+    if(force||!state.onboarding) await loadMe();
+    const step=firstIncompleteStep();
+    const p=state.onboarding?.profile||state.profile?.profile||{};
+
+    if(step==="questionnaire") return renderQuestionnaireStep();
+
+    let body="";
+    if(step==="basic"){
+      body='<div class="onboarding-card"><div class="eyebrow">Начнём с главного</div><h1>Расскажите немного о себе</h1><p class="muted">Это поможет не показывать вам случайных людей.</p>'+
+        '<div class="form-stack">'+
+        '<label class="field-label">Имя<input class="input" id="ob-name" value="'+esc(p.display_name||"")+'" placeholder="Как к вам обращаться"></label>'+
+        '<label class="field-label">Дата рождения<input class="input" id="ob-dob" type="date" value="'+esc(p.dob||"")+'"></label>'+
+        '<div class="form-grid">'+
+          '<label class="field-label">Ваш пол'+selectHtml("ob-gender",p.gender,[["M","Мужчина"],["F","Женщина"],["OTHER","Другое"]])+'</label>'+
+          '<label class="field-label">Кого ищете'+selectHtml("ob-seek",p.seek_gender,[["F","Женщину"],["M","Мужчину"],["ANY","Не важно"],["OTHER","Другое"]])+'</label>'+
+        '</div>'+
+        '<button class="primary full" id="ob-save-basic">Продолжить →</button></div></div>';
+    } else if(step==="relationship"){
+      body='<div class="onboarding-card"><div class="eyebrow">Статус</div><h1>Вы сейчас в отношениях?</h1><p class="muted">MatchLab показывает анкеты только тем, кто действительно открыт к знакомству.</p>'+
+        '<div class="choice-grid" id="relationship-choice">'+
+          '<button class="choice-card" data-rel="no"><b>Нет</b><span>Я свободен(на)</span></button>'+
+          '<button class="choice-card" data-rel="yes"><b>Да</b><span>Сейчас я в отношениях</span></button>'+
+        '</div>'+
+        '<div id="openness-block" class="form-stack" hidden><div class="field-label">Насколько вы открыты к знакомствам?</div>'+
+          selectHtml("ob-openness","ACTIVE",[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Пока не уверен(а)"],["NO","Не хочу знакомств"]])+
+          '<button class="primary full" id="ob-save-relationship">Продолжить →</button></div></div>';
+    } else if(step==="readiness"){
+      body='<div class="onboarding-card"><div class="eyebrow">Готовность</div><h1>Как вам комфортнее начинать знакомство?</h1><p class="muted">Это не влияет на «оценку» — только помогает подобрать людей с похожим темпом.</p>'+
+        '<div class="form-stack">'+
+        '<label class="field-label">Готовность общаться в чате'+selectHtml("ob-chat",p.readiness_chat,[["YES","Да, готов(а)"],["RATHER_YES","Скорее да"],["LOOK_ONLY","Пока хочу присмотреться"]])+'</label>'+
+        '<label class="field-label">Готовность встретиться офлайн'+selectHtml("ob-offline",p.readiness_offline,[["YES","Да"],["MAYBE","Возможно, после общения"],["NO","Пока нет"]])+'</label>'+
+        '<button class="primary full" id="ob-save-readiness">Продолжить →</button></div></div>';
+    } else if(step==="details"){
+      body='<div class="onboarding-card wide"><div class="eyebrow">О вас</div><h1>Что важно знать для совместимости?</h1><p class="muted">Только то, что реально помогает подобрать человека.</p>'+
+        '<div class="form-grid">'+
+          '<label class="field-label">Рост, см<input class="input" id="ob-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'"></label>'+
+          '<label class="field-label">Цель знакомства'+selectHtml("ob-goal",p.dating_goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])+'</label>'+
+          '<label class="field-label">Дети'+selectHtml("ob-children",p.children_status,[["NO_CHILDREN","Нет детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
+          '<label class="field-label">Планы на детей'+selectHtml("ob-children-plans",p.children_plans,[["WANTS","Хочу"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочу"]])+'</label>'+
+          '<label class="field-label">Курение'+selectHtml("ob-smoking",p.smoking,[["NO","Не курю"],["RARE","Иногда"],["YES","Курю"]])+'</label>'+
+          '<label class="field-label">Алкоголь'+selectHtml("ob-alcohol",p.alcohol,[["NO","Не употребляю"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
+          '<label class="field-label">Образ жизни'+selectHtml("ob-lifestyle",p.lifestyle,[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
+          '<label class="field-label">Религия — необязательно<input class="input" id="ob-religion" value="'+esc(p.religion||"")+'" placeholder="Например, ислам"></label>'+
+        '</div>'+
+        '<label class="field-label">Коротко о себе<textarea class="input textarea" id="ob-bio" maxlength="2000" placeholder="Чем вы живёте, что любите, какой человек вам близок">'+esc(p.bio||"")+'</textarea></label>'+
+        '<button class="primary full" id="ob-save-details">Перейти к анкете →</button></div>';
+    } else if(step==="partner_preferences"){
+      const seek=p.seek_gender||"ANY";
+      body='<div class="onboarding-card wide"><div class="eyebrow">Ваш человек</div><h1>Кого вы хотите встретить?</h1><p class="muted">Не делаем бесконечный фильтр. Только критерии, которые действительно важны.</p>'+
+        '<div class="form-grid">'+
+          '<label class="field-label">Возраст от<input class="input" id="pref-age-min" type="number" min="18" max="100" value="23"></label>'+
+          '<label class="field-label">Возраст до<input class="input" id="pref-age-max" type="number" min="18" max="100" value="38"></label>'+
+          '<label class="field-label">Расстояние, км<input class="input" id="pref-distance" type="number" min="1" max="1000" value="100"></label>'+
+          '<label class="field-label">Рост от<input class="input" id="pref-height-min" type="number" min="100" max="250" value="150"></label>'+
+          '<label class="field-label">Рост до<input class="input" id="pref-height-max" type="number" min="100" max="250" value="200"></label>'+
+          '<label class="field-label">Цель знакомства'+selectHtml("pref-goal","SERIOUS",[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["ANY","Любая"]])+'</label>'+
+        '</div>'+
+        '<button class="primary full" id="ob-save-preferences">Сохранить критерии →</button></div>';
+    } else {
+      const photos=state.onboarding?.photos||{};
+      body='<div class="onboarding-card"><div class="eyebrow">Последний шаг</div><h1>Добавьте фотографии</h1><p class="muted">Нужно минимум 2 одобренных фото. Первое станет главным.</p>'+
+        '<div class="photo-progress-big"><b>'+esc(photos.approved||0)+'/2</b><span>одобрено</span></div>'+
+        '<label class="photo-upload"><input type="file" id="ob-photo" accept="image/jpeg,image/png,image/webp"><span>＋ Добавить фото</span></label>'+
+        '<p class="muted small">После загрузки фото отправляется на модерацию. Пока оно проверяется, можно пользоваться приложением.</p>'+
+        '<button class="secondary full" id="ob-finish-later">Перейти в приложение</button></div>';
+    }
+
+    root.innerHTML=onboardingChrome(step,body);
+    pick("onboarding-exit").onclick=()=>setRoute("home");
+
+    if(step==="basic"){
+      pick("ob-save-basic").onclick=async()=>{
+        try{
+          onboardingStatus("Сохраняем…");
+          await post("/api/v1/profile/basic",{display_name:pick("ob-name").value.trim(),dob:pick("ob-dob").value,gender:pick("ob-gender").value,seek_gender:pick("ob-seek").value,market_code:"KZ-ALA",preferred_locale:"ru-KZ"});
+          await loadMe(); renderOnboarding();
+        }catch(e){onboardingStatus("Проверьте данные: "+e.message,true)}
+      };
+    } else if(step==="relationship"){
+      let inRelationship=false;
+      document.querySelectorAll("[data-rel]").forEach(btn=>btn.onclick=()=>{
+        inRelationship=btn.dataset.rel==="yes";
+        document.querySelectorAll("[data-rel]").forEach(x=>x.classList.toggle("selected",x===btn));
+        pick("openness-block").hidden=false;
+        if(inRelationship) pick("ob-openness").value="NO";
+      });
+      pick("ob-save-relationship").onclick=async()=>{
+        try{
+          await post("/api/v1/profile/relationship",{in_relationship:inRelationship,openness:pick("ob-openness").value});
+          await loadMe(); renderOnboarding();
+        }catch(e){onboardingStatus(e.message,true)}
+      };
+    } else if(step==="readiness"){
+      pick("ob-save-readiness").onclick=async()=>{
+        try{
+          await post("/api/v1/profile/readiness",{chat:pick("ob-chat").value,offline:pick("ob-offline").value});
+          await loadMe(); renderOnboarding();
+        }catch(e){onboardingStatus(e.message,true)}
+      };
+    } else if(step==="details"){
+      pick("ob-save-details").onclick=async()=>{
+        try{
+          await post("/api/v1/profile/details",{height:Number(pick("ob-height").value),dating_goal:pick("ob-goal").value,children_status:pick("ob-children").value,children_plans:pick("ob-children-plans").value,smoking:pick("ob-smoking").value,alcohol:pick("ob-alcohol").value,lifestyle:pick("ob-lifestyle").value,bio:pick("ob-bio").value.trim(),religion:pick("ob-religion").value.trim(),nationality:""});
+          await loadMe(); renderOnboarding();
+        }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
+      };
+    } else if(step==="partner_preferences"){
+      pick("ob-save-preferences").onclick=async()=>{
+        const seek=(state.onboarding?.profile?.seek_gender||"ANY");
+        const gender=seek==="ANY"?["M","F","OTHER"]:[seek];
+        const goal=pick("pref-goal").value;
+        const prefs={
+          age:{importance:"HARD",value:{min:Number(pick("pref-age-min").value),max:Number(pick("pref-age-max").value)}},
+          gender:{importance:"HARD",value:gender},
+          market:{importance:"HARD",value:["KZ-ALA"]},
+          distance_km:{importance:"IMPORTANT",value:{max:Number(pick("pref-distance").value)}},
+          dating_goal:{importance:"IMPORTANT",value:goal==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goal]},
+          children_status:{importance:"IGNORE"},
+          children_plans:{importance:"IGNORE"},
+          smoking:{importance:"IGNORE"},
+          alcohol:{importance:"IGNORE"},
+          lifestyle:{importance:"IGNORE"},
+          height:{importance:"PREFERENCE",value:{min:Number(pick("pref-height-min").value),max:Number(pick("pref-height-max").value)}}
+        };
+        try{
+          onboardingStatus("Сохраняем критерии…");
+          await post("/api/v1/preferences",{preferences:prefs});
+          await loadMe(); renderOnboarding();
+        }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
+      };
+    } else {
+      pick("ob-finish-later").onclick=()=>setRoute("home");
+      pick("ob-photo").onchange=async(e)=>{
+        const file=e.target.files?.[0]; if(!file)return;
+        if(file.size>12*1024*1024)return onboardingStatus("Фото слишком большое. Максимум 12 МБ.",true);
+        try{
+          onboardingStatus("Загружаем фото…");
+          const prep=await post("/api/v1/photos/prepare",{mime:file.type});
+          const headers=prep.upload?.headers||{"Content-Type":file.type};
+          const up=await fetch(prep.upload.url,{method:"PUT",headers,body:file});
+          if(!up.ok) throw new Error("upload_failed");
+          await post("/api/v1/photos/finalize",{ticket:prep.ticket});
+          await loadMe(); renderOnboarding();
+        }catch(err){onboardingStatus("Не удалось загрузить фото: "+err.message,true)}
+      };
+    }
+  }
+
+  async function renderQuestionnaireStep(){
+    let q;
+    try{q=await api("/api/v1/questionnaire/adaptive");}
+    catch(e){return root.innerHTML=onboardingChrome("questionnaire",'<div class="onboarding-card"><h1>Анкета пока недоступна</h1><p class="muted">'+esc(e.message)+'</p></div>')}
+
+    if(q.complete){
+      await loadMe();
+      return renderOnboarding();
+    }
+    const progress=q.progress||{};
+    const question=q.question||{};
+    root.innerHTML=onboardingChrome("questionnaire",
+      '<div class="onboarding-card questionnaire-card">'+
+      '<div class="question-meta"><span>'+esc(question.axis_label||"Совместимость")+'</span><b>'+esc(progress.percent||0)+'%</b></div>'+
+      '<div class="progress-track big"><i style="width:'+Number(progress.percent||0)+'%"></i></div>'+
+      '<h1>'+esc(question.text||"")+'</h1>'+
+      '<p class="muted">Выберите вариант, который лучше всего описывает вас. Здесь нет правильных ответов.</p>'+
+      '<div class="answer-scale">'+(question.options||[]).map(o=>
+        '<button class="answer-option" data-answer="'+esc(o.value)+'"><b>'+esc(o.value)+'</b><span>'+esc(o.label)+'</span></button>'
+      ).join("")+'</div>'+
+      '<button class="ghost full" id="questionnaire-later">Продолжить позже</button>'+
+      '</div>');
+    pick("onboarding-exit").onclick=()=>setRoute("home");
+    pick("questionnaire-later").onclick=()=>setRoute("home");
+    document.querySelectorAll("[data-answer]").forEach(btn=>btn.onclick=async()=>{
+      document.querySelectorAll("[data-answer]").forEach(x=>x.disabled=true);
+      try{
+        await post("/api/v1/questionnaire/adaptive/answer",{question_token:question.token,value:Number(btn.dataset.answer)});
+        renderQuestionnaireStep();
+      }catch(e){
+        document.querySelectorAll("[data-answer]").forEach(x=>x.disabled=false);
+        onboardingStatus("Не удалось сохранить ответ: "+e.message,true);
+      }
+    });
+  }
+
   async function renderProfile() {
     clearPoller(); loading("profile"); await loadMe();
     const p=state.profile?.profile;
@@ -585,9 +817,11 @@
       '<button class="secondary full" id="logout-btn" style="margin-top:14px">Выйти из аккаунта</button></section>'+
       '<div class="section-head"><h2>Статус анкеты</h2></div>'+
       '<section class="card"><p>'+esc(state.onboarding?.waitlist?.message||"Продолжайте заполнять профиль, чтобы участвовать в подборе.")+'</p>'+
-      '<div class="status">Веб-версию полной анкеты сейчас переносим следующим блоком. Все уже сохранённые ответы остаются в базе.</div></section>'+
+      '<button class="primary full" id="continue-onboarding">Продолжить анкету →</button></section>'+
     '</main>'+nav("profile");
     bindCommon();
+    const continueBtn=document.getElementById("continue-onboarding");
+    if(continueBtn) continueBtn.onclick=()=>setRoute("onboarding");
     document.getElementById("logout-btn").onclick=async()=>{
       try{await post("/api/v1/auth/logout",{});}catch{}
       state.authenticated=false; state.profile=null; state.onboarding=null; location.hash=""; renderAuth("login");
@@ -605,6 +839,7 @@
       }
     }
     const route=(location.hash||"#home").slice(1).split("?")[0];
+    if(route==="onboarding") return renderOnboarding(force);
     if(route==="home") return renderHome();
     if(route==="candidate") return renderCandidate();
     if(route==="matches") return renderMatches();
