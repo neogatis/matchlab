@@ -49,7 +49,18 @@ def _market(db: Session, profile: Profile | None) -> Market | None:
     return db.get(Market, profile.market_id)
 
 
-def _gender_direction_ok(source: Profile, target: Profile) -> bool:
+def _gender_direction_ok(db: Session, source: Profile, target: Profile) -> bool:
+    configured = db.execute(
+        select(PartnerPreference).where(
+            PartnerPreference.user_id == source.user_id,
+            PartnerPreference.criterion_key == "gender",
+        )
+    ).scalar_one_or_none()
+    if configured is not None:
+        # Once the user has configured "Кого я ищу", that criterion's
+        # importance is the source of truth. HARD is enforced below; softer
+        # levels affect ranking only; IGNORE is completely neutral.
+        return True
     return source.seek_gender == "ANY" or source.seek_gender == target.gender
 
 
@@ -214,9 +225,9 @@ def mutual_hard_pass(db: Session, user_a: int, user_b: int) -> tuple[bool, str |
         return False, "target_not_matchable"
     if _blocked(db, user_a, user_b):
         return False, "blocked"
-    if not _gender_direction_ok(pa, pb):
+    if not _gender_direction_ok(db, pa, pb):
         return False, "source_gender_direction"
-    if not _gender_direction_ok(pb, pa):
+    if not _gender_direction_ok(db, pb, pa):
         return False, "target_gender_direction"
 
     ok, key = _hard_filter_direction(db, pa, ma, pb, mb)
