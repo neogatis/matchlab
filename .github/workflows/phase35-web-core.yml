@@ -44,8 +44,8 @@ jobs:
       - run: node --check web/app.js
       - run: >
           python -m unittest
-          tests.test_matching_service
-          tests.test_interests_service
+          tests.test_matching_engine_v1
+          tests.test_interest_service
           tests.test_chat_service
           tests.test_http_runtime_contract
           -v
