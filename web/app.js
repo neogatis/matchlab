@@ -116,41 +116,214 @@
     }, 2600);
   }
 
+  function renderLanding() {
+    clearPoller();
+    document.body.classList.add("landing-active");
+    const heroPhoto="https://images.unsplash.com/photo-1776266099714-2177bb456209?auto=format&fit=crop&fm=jpg&q=88&w=1800";
+    const demoProfiles=[
+      {name:"Анна",age:26,role:"Дизайнер",city:"Алматы",score:92,photo:"https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=900&q=82",note:"Любит спокойные вечера, путешествия и развиваться в профессии."},
+      {name:"Дмитрий",age:28,role:"Предприниматель",city:"Алматы",score:89,photo:"https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=82",note:"Ценит близкие отношения, спорт и честный разговор."},
+      {name:"Екатерина",age:25,role:"Психолог",city:"Алматы",score:87,photo:"https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=900&q=82",note:"Интересуется людьми, искусством и осознанным образом жизни."},
+      {name:"Алексей",age:30,role:"Маркетолог",city:"Алматы",score:84,photo:"https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=900&q=82",note:"Любит горы, новые идеи и отношения без игр."}
+    ];
+    root.innerHTML =
+      '<main class="landing">' +
+        '<header class="landing-header">' +
+          '<div class="landing-header-inner">' +
+            '<button class="landing-brand" data-scroll="top" aria-label="MatchLab"><span class="landing-logo-mark">♡</span><span>Match<span>Lab</span></span></button>' +
+            '<nav class="landing-nav" id="landing-nav">' +
+              '<button data-scroll="about">О нас</button>' +
+              '<button data-scroll="how">Как это работает</button>' +
+              '<button data-scroll="stories">Истории</button>' +
+              '<button data-scroll="safety">Безопасность</button>' +
+              '<button data-scroll="blog">Блог</button>' +
+            '</nav>' +
+            '<div class="landing-header-actions"><span class="landing-lang">🌐 RU</span><button class="tertiary" data-auth="login">Войти</button><button class="primary landing-create" data-auth="register">Создать аккаунт</button><button class="landing-burger" id="landing-burger" aria-label="Меню">☰</button></div>' +
+          '</div>' +
+        '</header>' +
+
+        '<section class="landing-hero landing-anchor" id="top">' +
+          '<div class="landing-container hero-grid">' +
+            '<div class="hero-content" id="about">' +
+              '<div class="landing-kicker">БОЛЬШЕ, ЧЕМ ЗНАКОМСТВА</div>' +
+              '<h1>Знакомства без<br><em>бесконечных свайпов</em></h1>' +
+              '<p class="hero-lead">MatchLab анализирует ваши ценности, характер и взгляды на отношения, чтобы находить людей, с которыми действительно может возникнуть совместимость.</p>' +
+              '<div class="hero-actions"><button class="primary landing-primary" data-auth="register">Пройти анкету →</button><button class="secondary landing-secondary" data-scroll="how">▶&nbsp;&nbsp;Как это работает</button></div>' +
+              '<div class="landing-proof">' +
+                '<div class="proof-avatars">' +
+                  demoProfiles.slice(0,3).map(p=>'<img src="'+esc(p.photo)+'" alt="" loading="lazy">').join("") +
+                '</div>' +
+                '<div><b>Первые участники формируют MatchLab</b><span>Без выдуманных цифр: сервис собирает качественную базу для запуска.</span></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="hero-visual">' +
+              '<div class="hero-glow hero-glow-one"></div><div class="hero-glow hero-glow-two"></div>' +
+              '<img class="hero-couple" src="'+heroPhoto+'" alt="Пара, которая проводит время вместе">' +
+              '<div class="hero-signup-card">' +
+                '<div class="signup-progress"><i class="active"></i><i></i><i></i><i></i><i></i></div>' +
+                '<div class="eyebrow">Начните с себя</div><h2>Кого мы будем искать для вас?</h2>' +
+                '<p>Пройдите короткий первый этап — дальше MatchLab постепенно узнает вас лучше.</p>' +
+                '<label class="landing-field-title">Кто вы?</label>' +
+                '<div class="gender-choices"><button data-landing-gender="F">♀ <span>Я женщина</span></button><button data-landing-gender="M">♂ <span>Я мужчина</span></button></div>' +
+                '<div class="age-head"><label for="landing-age">Ваш возраст</label><strong id="landing-age-value">25</strong></div>' +
+                '<input id="landing-age" class="landing-range" type="range" min="18" max="70" value="25">' +
+                '<button class="primary full" id="landing-continue">Продолжить →</button>' +
+                '<div class="signup-privacy">🔒 Ваши данные защищены</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section landing-anchor" id="how">' +
+          '<div class="landing-container">' +
+            '<div class="landing-section-head centered"><div class="landing-kicker">КАК ЭТО РАБОТАЕТ</div><h2>Технологии, которые сближают людей</h2><p>От глубокой анкеты до нескольких осмысленных знакомств — без каталога из сотен случайных профилей.</p></div>' +
+            '<div class="feature-grid">' +
+              '<article class="feature-card"><div class="feature-icon">▤</div><h3>Глубокая анкета</h3><p>Вы отвечаете на вопросы о ценностях, образе жизни, характере и взглядах на отношения.</p><span>10–15 минут для первого этапа</span></article>' +
+              '<article class="feature-card"><div class="feature-icon">✦</div><h3>MatchLab анализирует совместимость</h3><p>Ответы складываются в психологически и жизненно осмысленный профиль совместимости.</p><span>Не только интересы</span></article>' +
+              '<article class="feature-card"><div class="feature-icon">♡</div><h3>Осмысленные знакомства</h3><p>Вместо сотен случайных профилей — ограниченное количество действительно подходящих людей.</p><span>Без бесконечных свайпов</span></article>' +
+              '<article class="feature-card"><div class="feature-icon">◌</div><h3>Настоящее общение</h3><p>Когда интерес взаимный, MatchLab помогает перейти к содержательному диалогу.</p><span>Взаимный интерес</span></article>' +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section candidate-demo-section">' +
+          '<div class="landing-container">' +
+            '<div class="landing-section-head"><div><div class="landing-kicker">НЕ СЛУЧАЙНЫЕ ПРОФИЛИ</div><h2>Люди, которые могут вам подойти</h2><p>Мы уже сделали большую часть поиска за вас. Ниже — демонстрационный пример того, как выглядит подбор.</p></div></div>' +
+            '<div class="demo-candidate-grid">' +
+              demoProfiles.map(p=>'<article class="demo-candidate-card"><div class="demo-photo-wrap"><img src="'+esc(p.photo)+'" alt="'+esc(p.name)+'" loading="lazy"><span class="demo-label">Демонстрационный профиль</span></div><div class="demo-candidate-copy"><div class="demo-name-row"><div><h3>'+esc(p.name)+', '+p.age+'</h3><span>'+esc(p.role)+' · '+esc(p.city)+'</span></div><div class="demo-score"><b>💜 '+p.score+'%</b><small>по анкете</small></div></div><p>'+esc(p.note)+'</p></div></article>').join("") +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section compatibility-showcase">' +
+          '<div class="landing-container">' +
+            '<div class="landing-section-head centered"><div class="landing-kicker">ОБЪЯСНЯЕМ, А НЕ ПРОСТО СЧИТАЕМ</div><h2>Почему вам действительно может быть хорошо вместе</h2><p>Процент — только начало. Главное — понять, где именно вы совпадаете и что стоит спокойно обсудить.</p></div>' +
+            '<div class="compat-chat-grid">' +
+              '<article class="landing-compat-card">' +
+                '<div class="landing-compat-top"><div><div class="compat-status">💜 Высокая совместимость</div><div class="compat-people"><img src="'+esc(demoProfiles[0].photo)+'" alt=""><div class="compat-ring"><strong id="landing-compat-percent">0%</strong><span>по анкете</span></div><img src="'+esc(demoProfiles[1].photo)+'" alt=""></div></div></div>' +
+                '<h3>Почему вы можете подойти друг другу</h3>' +
+                '<div class="landing-reasons">' +
+                  '<div><span>💜</span><p><b>Ценности — очень близкие</b>Оба цените стабильность, личную свободу и развитие.</p></div>' +
+                  '<div><span>🏠</span><p><b>Семья — совпадает</b>Похожее отношение к семье и будущему.</p></div>' +
+                  '<div><span>💬</span><p><b>Общение — высокая совместимость</b>Вы оба предпочитаете обсуждать проблемы напрямую.</p></div>' +
+                  '<div><span>🌙</span><p><b>Образ жизни — есть различия</b>Один из вас чаще выбирает активную социальную жизнь.</p></div>' +
+                '</div>' +
+                '<div class="landing-attention"><div class="eyebrow">На что стоит обратить внимание</div><p>У вас может отличаться потребность в социальной активности. Это не обязательно проблема — просто тема, которую полезно обсудить.</p></div>' +
+                '<div class="landing-candidate-actions"><button class="tertiary" data-auth="register">Подробнее</button><button class="primary" data-auth="register">💜 Хочу познакомиться</button><button class="secondary" data-auth="register">Пока не подходит</button></div>' +
+              '</article>' +
+              '<article class="landing-chat-card">' +
+                '<div class="chat-preview-head"><div><div class="landing-kicker">ОБЩЕНИЕ</div><h3>Общение, которое начинается с общего</h3></div><span>92%</span></div>' +
+                '<div class="chat-preview-person"><img src="'+esc(demoProfiles[0].photo)+'" alt=""><div><b>Анна, 26</b><span>Высокая совместимость</span></div></div>' +
+                '<div class="chat-preview-messages"><div class="preview-bubble mine">Привет! Увидел, что мы оба мечтаем съездить в Японию. Какое место ты бы посетила первым? 🙂</div><div class="preview-bubble">Наверное Киото. Особенно весной 🌸 А ты?</div></div>' +
+                '<div class="chat-assist-preview">✨ MatchLab может предложить тему для начала разговора</div>' +
+                '<div class="preview-composer"><span>Напишите сообщение...</span><button>➤</button></div>' +
+              '</article>' +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section stories-section landing-anchor" id="stories">' +
+          '<div class="landing-container">' +
+            '<div class="landing-section-head centered"><div class="landing-kicker">ИСТОРИИ MATCHLAB</div><h2>Истории, которые начнутся с совпадения</h2><p>Мы не публикуем выдуманные отзывы. Здесь появятся реальные истории пар после запуска и только с их согласия.</p></div>' +
+            '<div class="stories-honest-card"><div class="stories-orbit"><span>♡</span><span>✦</span><span>♡</span></div><h3>Первые знакомства уже впереди</h3><p>MatchLab создаётся для того, чтобы находить не «идеальных» людей, а тех, с кем совпадают действительно важные вещи.</p><button class="secondary" data-auth="register">Стать одним из первых участников</button></div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section safety-section landing-anchor" id="safety">' +
+          '<div class="landing-container safety-grid">' +
+            '<div><div class="landing-kicker">БЕЗОПАСНОСТЬ И ДОВЕРИЕ</div><h2>Серьёзные знакомства требуют спокойного пространства</h2><p>Профиль появляется в подборе только после заполнения ключевых данных и прохождения необходимых проверок. Жалобы, блокировки и управление видимостью встроены в продукт.</p><div class="safety-points"><div><b>18+</b><span>сервис только для совершеннолетних</span></div><div><b>Контроль</b><span>можно поставить знакомства на паузу</span></div><div><b>Безопасность</b><span>жалоба и блокировка доступны из профиля и чата</span></div></div></div>' +
+            '<div class="safety-visual"><div class="shield-mark">♡</div><h3>Ваш профиль — под вашим контролем</h3><p>Вы сами управляете фотографиями, критериями, статусом знакомств, уведомлениями и удалением аккаунта.</p><a href="/privacy" target="_blank" rel="noopener">Политика конфиденциальности →</a></div>' +
+          '</div>' +
+        '</section>' +
+
+        '<section class="landing-section blog-section landing-anchor" id="blog">' +
+          '<div class="landing-container"><div class="landing-section-head"><div><div class="landing-kicker">БЛОГ</div><h2>О знакомствах без игр</h2></div></div><div class="blog-grid">' +
+            '<article><span>Совместимость</span><h3>Почему общие интересы — ещё не всё</h3><p>Как ценности, границы и стиль общения влияют на отношения.</p></article>' +
+            '<article><span>Первое знакомство</span><h3>Что обсуждать, когда хочется узнать человека глубже</h3><p>Темы, которые помогают перейти от small talk к настоящему диалогу.</p></article>' +
+            '<article><span>Безопасность</span><h3>Как знакомиться онлайн спокойнее</h3><p>Простые правила личных границ и первой встречи.</p></article>' +
+          '</div></div>' +
+        '</section>' +
+
+        '<section class="landing-final-cta">' +
+          '<div class="landing-container"><div class="final-cta-card"><div class="landing-kicker">ГОТОВЫ ПОЗНАКОМИТЬСЯ ИНАЧЕ?</div><h2>Пройдите анкету — остальное MatchLab возьмёт на себя.</h2><p>Вместо бесконечного выбора — несколько людей, с которыми действительно стоит познакомиться.</p><button class="primary landing-primary" data-auth="register">Начать анкету →</button></div></div>' +
+        '</section>' +
+
+        '<footer class="landing-footer"><div class="landing-container footer-grid"><div><button class="landing-brand" data-scroll="top"><span class="landing-logo-mark">♡</span><span>Match<span>Lab</span></span></button><p>Знакомства по совместимости. 18+.</p></div><div><b>Продукт</b><button data-scroll="how">Как это работает</button><button data-scroll="safety">Безопасность</button><button data-scroll="blog">Блог</button></div><div><b>Документы</b><a href="/privacy" target="_blank" rel="noopener">Конфиденциальность</a><a href="/terms" target="_blank" rel="noopener">Условия</a></div><div><b>Аккаунт</b><button data-auth="login">Войти</button><button data-auth="register">Создать аккаунт</button></div></div></footer>' +
+      '</main>';
+    bindLanding();
+  }
+
+  function bindLanding() {
+    document.querySelectorAll("[data-auth]").forEach(btn=>btn.onclick=()=>setRoute(btn.dataset.auth));
+    document.querySelectorAll("[data-scroll]").forEach(btn=>btn.onclick=()=>{
+      const target=document.getElementById(btn.dataset.scroll);
+      if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+      document.getElementById("landing-nav")?.classList.remove("open");
+    });
+    const burger=document.getElementById("landing-burger");
+    if(burger) burger.onclick=()=>document.getElementById("landing-nav")?.classList.toggle("open");
+
+    let gender="";
+    document.querySelectorAll("[data-landing-gender]").forEach(btn=>btn.onclick=()=>{
+      gender=btn.dataset.landingGender;
+      document.querySelectorAll("[data-landing-gender]").forEach(x=>x.classList.toggle("selected",x===btn));
+    });
+    const age=document.getElementById("landing-age");
+    const ageValue=document.getElementById("landing-age-value");
+    if(age&&ageValue) age.oninput=()=>ageValue.textContent=age.value;
+    const continueBtn=document.getElementById("landing-continue");
+    if(continueBtn) continueBtn.onclick=()=>{
+      try{
+        sessionStorage.setItem("ml_landing_gender",gender);
+        sessionStorage.setItem("ml_landing_age",age?.value||"25");
+      }catch{}
+      setRoute("register");
+    };
+
+    const score=document.getElementById("landing-compat-percent");
+    if(score){
+      const target=94;
+      let current=0;
+      const tick=()=>{
+        current=Math.min(target,current+2);
+        score.textContent=current+"%";
+        if(current<target) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+  }
+
   function renderAuth(mode="login") {
     clearPoller();
+    document.body.classList.remove("landing-active");
     const register = mode === "register";
-    root.innerHTML = '<main class="auth-screen">' +
-      '<div class="auth-wrap">' +
-        '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
-        '<div class="auth-tagline">' +
-          '<div class="eyebrow">Знакомства по совместимости</div>' +
-          '<h1>Не выбирай из всех.<br><span style="color:#ff5d6c">Найди подходящего.</span></h1>' +
-          '<p>Общие ценности, реальные люди и серьёзные намерения.</p>' +
-        '</div>' +
-        '<div class="auth-panel">' +
+    root.innerHTML = '<main class="auth-screen auth-screen-v12">' +
+      '<button class="auth-home-back" id="auth-home-back">← На главную</button>' +
+      '<div class="auth-v12-shell">' +
+        '<section class="auth-v12-visual">' +
+          '<img src="https://images.unsplash.com/photo-1776266099714-2177bb456209?auto=format&fit=crop&fm=jpg&q=86&w=1600" alt="Пара">' +
+          '<div class="auth-v12-copy"><div class="landing-kicker">MATCHLAB</div><h1>Не выбирайте из всех.<br>Найдите подходящего.</h1><p>Глубокая анкета, небольшой подбор и понятное объяснение совместимости.</p></div>' +
+        '</section>' +
+        '<section class="auth-panel auth-panel-v12">' +
+          '<div class="auth-v12-brand"><span class="landing-logo-mark">♡</span><div class="brand">Match<span>Lab</span></div></div>' +
           '<div class="tabs auth-switch">' +
             '<button class="tab ' + (!register?"active":"") + '" id="auth-login-tab">Вход</button>' +
             '<button class="tab ' + (register?"active":"") + '" id="auth-register-tab">Регистрация</button>' +
           '</div>' +
           '<section class="auth-card">' +
             '<div class="eyebrow">' + (register?"Новый профиль":"С возвращением") + '</div>' +
-            '<h2 style="font-family:Georgia,serif;font-size:30px;line-height:1.04;margin:7px 0 8px">' +
-              (register?"Создайте аккаунт":"Войдите в MatchLab") +
-            '</h2>' +
-            '<p class="muted" style="margin:0 0 18px">' +
-              (register
-                ?"Регистрация займёт пару минут. Затем начнём анкету совместимости."
-                :"По SMS-коду или телефону/email и паролю.") +
-            '</p>' +
+            '<h2>' + (register?"Создайте аккаунт":"Войдите в MatchLab") + '</h2>' +
+            '<p class="muted">' + (register?"После регистрации начнём анкету совместимости.":"По SMS-коду или телефону/email и паролю.") + '</p>' +
             (register ? registerForm() : loginForm()) +
-            '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
+            '<div id="form-status" class="status" hidden></div>' +
           '</section>' +
-        '</div>' +
-        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
+          '<p class="auth-legal muted">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>.</p>' +
+        '</section>' +
       '</div>' +
     '</main>';
-    document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
-    document.getElementById("auth-register-tab").onclick = () => renderAuth("register");
+    document.getElementById("auth-home-back").onclick=()=>{location.hash="";renderRoute()};
+    document.getElementById("auth-login-tab").onclick = () => setRoute("login");
+    document.getElementById("auth-register-tab").onclick = () => setRoute("register");
     register ? bindRegister() : bindLogin();
   }
 
@@ -412,7 +585,11 @@
   }
 
   function loading(active="home") {
-    root.innerHTML = '<main class="page">' + topbar() + '<div class="loader"></div></main>' + nav(active);
+    document.body.classList.remove("landing-active");
+    const body=active==="home"
+      ? '<section class="card loading-state"><div class="loading-spark">✦</div><h3>Ищем подходящих людей</h3><p class="muted">MatchLab сравнивает ценности, образ жизни и ожидания от отношений.</p><div class="loader"></div></section>'
+      : '<div class="loader"></div>';
+    root.innerHTML = '<main class="page">' + topbar() + body + '</main>' + nav(active);
     bindCommon();
   }
 
@@ -569,15 +746,15 @@
       '<div class="candidate-photo">' +
         (image ? '<img src="' + esc(image) + '" alt="' + esc(name) + '">' :
           '<div style="height:100%;display:grid;place-items:center;font-size:76px;color:var(--coral)">♡</div>') +
-        '<div class="compat-pill">' + esc(score) + '% совместимость</div>' +
+        '<div class="compat-pill"><span>Совместимость по анкете</span><b>' + esc(score) + '%</b></div>' +
       '</div>' +
       '<div class="candidate-body">' +
         '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div></div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
-        '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее о человеке →</button>' +
+        '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее</button>' +
         '<div class="actions candidate-actions">' +
-          '<button class="secondary candidate-reject" data-candidate-skip="' + c.user_id + '">Не мой человек</button>' +
+          '<button class="secondary candidate-reject" data-candidate-skip="' + c.user_id + '">Пока не подходит</button>' +
           '<button class="primary" data-candidate-like="' + c.user_id + '">Хочу познакомиться</button>' +
         '</div>' +
         '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Пожаловаться или заблокировать</button>' +
@@ -664,7 +841,7 @@
           else renderHome();
         }catch(e){
           btn.disabled=false;
-          btn.textContent="Не мой человек";
+          btn.textContent="Пока не подходит";
           alert("Не удалось учесть выбор: "+e.message);
         }
       };
@@ -779,10 +956,10 @@
     const c = state.candidates.find(x => Number(x.user_id) === Number(candidateId)) || {};
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
-    modal.innerHTML = '<div class="modal"><div class="hearts">♡ ♥ ♡</div>' +
-      '<div class="eyebrow">Взаимный интерес</div><h2>Вы выбрали друг друга!</h2>' +
-      '<p class="muted">Теперь можно начать общение' + (c.display_name ? " с " + esc(c.display_name) : "") + '.</p>' +
-      '<button class="primary full" id="mutual-chat">Начать общение →</button>' +
+    modal.innerHTML = '<div class="modal"><div class="hearts">💜</div>' +
+      '<div class="eyebrow">Взаимный интерес</div><h2>Интерес взаимный</h2>' +
+      '<p class="muted">Теперь вы можете начать общение' + (c.display_name ? " с " + esc(c.display_name) : "") + '.</p>' +
+      '<button class="primary full" id="mutual-chat">Написать сообщение →</button>' +
       '<button class="ghost full" id="mutual-later">Позже</button></div>';
     document.body.appendChild(modal);
     document.getElementById("mutual-later").onclick = () => { modal.remove(); renderHome(); };
@@ -863,6 +1040,7 @@
         '<div class="chat-title"><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
         '<span>'+esc(conv.mutual_fit_score??conv.compatibility_score??"")+(conv.mutual_fit_score!=null||conv.compatibility_score!=null?"% совместимость":"")+'</span></div>'+
         '<button class="icon-btn" id="chat-safety">⋯</button></header>'+
+      '<div class="conversation-assist">✨ MatchLab может предложить тему для начала разговора — но сообщение всегда пишете вы.</div>'+
       '<div id="messages" class="messages"><div class="loader"></div></div>'+
     '</main>'+
     '<div class="composer"><textarea id="message-input" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message">➤</button></div>'+
@@ -1621,9 +1799,16 @@
         await api("/api/v1/auth/methods");
         state.authenticated=true;
       }catch(e){
-        if(e.status===401){renderAuth("login");return;}
+        if(e.status===401){
+          if(route==="login") return renderAuth("login");
+          if(route==="register") return renderAuth("register");
+          renderLanding();
+          return;
+        }
       }
     }
+    if(state.authenticated&&(route==="login"||route==="register"))return setRoute("home");
+    document.body.classList.remove("landing-active");
     if(route==="onboarding") return renderOnboarding(force);
     if(route==="home") return renderHome();
     if(route==="candidate") return renderCandidate();
