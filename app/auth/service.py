@@ -104,12 +104,27 @@ def verify_password(password: str, stored: str) -> tuple[bool, bool]:
     return _verify_legacy_pbkdf2(password, stored), True
 
 
+def _attribution_fields(attribution: dict | None) -> dict[str, str]:
+    raw = attribution if isinstance(attribution, dict) else {}
+    def clean(key: str) -> str:
+        return str(raw.get(key, "") or "").strip()[:255]
+    return {
+        "utm_source": clean("utm_source"),
+        "utm_medium": clean("utm_medium"),
+        "utm_campaign": clean("utm_campaign"),
+        "utm_content": clean("utm_content"),
+        "utm_term": clean("utm_term"),
+        "referral_input": clean("referral_input"),
+    }
+
+
 def register_email_user(
     db: OrmSession,
     email: str,
     password: str,
     referred_by: int | None = None,
     referral_code: str | None = None,
+    attribution: dict | None = None,
 ) -> User:
     normalized = normalize_email(email)
     password_hash = hash_password(password)
@@ -141,10 +156,13 @@ def register_email_user(
         db.rollback()
         raise AuthError("Email already registered") from exc
 
+    attribution_fields = _attribution_fields(attribution)
+    if referral_input and not attribution_fields["referral_input"]:
+        attribution_fields["referral_input"] = referral_input[:255]
     db.add(
         MarketingAttribution(
             user_id=user.id,
-            referral_input=referral_input[:255],
+            **attribution_fields,
         )
     )
 
@@ -607,6 +625,7 @@ def verify_phone_registration_code(
     code: str,
     password: str,
     referral_code: str | None = None,
+    attribution: dict | None = None,
     now: datetime | None = None,
 ) -> User:
     from app.auth.sms import normalize_phone
@@ -644,6 +663,7 @@ def verify_phone_registration_code(
         db,
         user=user,
         referral_code=referral_code,
+        attribution=attribution,
     )
     db.add(
         AuthIdentity(
@@ -712,6 +732,7 @@ def _apply_referral_to_new_user(
     *,
     user: User,
     referral_code: str | None,
+    attribution: dict | None = None,
 ) -> None:
     referral_input = (referral_code or "").strip()
     resolved_referrer = None
@@ -723,10 +744,13 @@ def _apply_referral_to_new_user(
             resolved_referrer = referrer.id
             user.referred_by = referrer.id
 
+    attribution_fields = _attribution_fields(attribution)
+    if referral_input and not attribution_fields["referral_input"]:
+        attribution_fields["referral_input"] = referral_input[:255]
     db.add(
         MarketingAttribution(
             user_id=user.id,
-            referral_input=referral_input[:255],
+            **attribution_fields,
         )
     )
     if resolved_referrer is not None:
@@ -747,6 +771,7 @@ def verify_phone_login_code(
     code: str,
     referral_code: str | None = None,
     new_password: str | None = None,
+    attribution: dict | None = None,
     now: datetime | None = None,
 ) -> User:
     from app.auth.sms import normalize_phone
@@ -784,6 +809,7 @@ def verify_phone_login_code(
             db,
             user=user,
             referral_code=referral_code,
+            attribution=attribution,
         )
         db.add(
             AuthIdentity(
