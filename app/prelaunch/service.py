@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    Market,
     Profile,
     QuestionnaireAnswer,
     QuestionnaireQuestion,
@@ -93,7 +94,11 @@ def waitlist_status(
         raise PrelaunchError("profile_not_found")
 
     completion = profile_completion_state(profile)
-    ready = (
+    market = db.get(Market, profile.market_id) if profile.market_id is not None else None
+    contact_verified = bool(
+        user.email_verified_at is not None or user.phone_verified_at is not None
+    )
+    profile_ready = bool(
         user.status == "ACTIVE"
         and completion["basic"]
         and completion["details"]
@@ -105,13 +110,30 @@ def waitlist_status(
         and profile.eligibility_status == "ACTIVE_FOR_MATCHING"
         and profile.relationship_status in {"ACTIVE_SEARCH", "OPEN_TO_MATCH"}
     )
+    ready = bool(profile_ready and contact_verified and market and market.matching_open)
 
     prelaunch = prelaunch_mode(db)
     output_enabled = candidate_output_enabled(db)
 
-    if not ready:
+    if not profile_ready:
         state = "PROFILE_INCOMPLETE_OR_INACTIVE"
         message = "Завершите профиль и оставьте статус знакомства активным."
+    elif not contact_verified:
+        state = "CONTACT_VERIFICATION_REQUIRED"
+        message = (
+            "Профиль заполнен. Подтвердите email или телефон, "
+            "чтобы участвовать в активном подборе."
+        )
+    elif market is None:
+        state = "MARKET_UNAVAILABLE"
+        message = "Город профиля не настроен. Обновите данные профиля."
+    elif not market.matching_open:
+        state = "WAITLIST"
+        city = profile.city or market.display_name
+        message = (
+            f"Профиль готов. MatchLab пока запускается в Алматы. "
+            f"Мы сообщим, когда подбор откроется в городе {city}."
+        )
     elif prelaunch and not output_enabled:
         state = "WAITLIST"
         message = (
@@ -131,6 +153,10 @@ def waitlist_status(
         "completion": completion,
         "relationship_status": profile.relationship_status,
         "eligibility_status": profile.eligibility_status,
+        "contact_verified": contact_verified,
+        "market_code": market.code if market else None,
+        "market_matching_open": bool(market and market.matching_open),
+        "city": profile.city,
         "features": feature_flags(db),
         "message": message,
     }
