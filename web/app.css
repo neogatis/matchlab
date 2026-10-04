@@ -1992,3 +1992,43 @@ body{background:var(--bg)}
   .preference-grid{grid-template-columns:1fr!important}
   .preference-card{padding:14px!important}
 }
+
+
+/* VERIFICATION + LAUNCH READINESS */
+.verification-banner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  margin:0 0 16px;
+  padding:13px 14px;
+  border:1px solid rgba(139,92,246,.14);
+  border-radius:17px;
+  background:linear-gradient(135deg,#FCFAFF,#F5EEFF);
+  box-shadow:0 7px 22px rgba(65,35,100,.04);
+}
+.verification-banner>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.verification-banner b{font-size:13px;color:#432758}
+.verification-banner span{font-size:11px;line-height:1.4;color:#7E7088}
+.verification-banner button{min-height:40px!important;padding:0 13px!important;white-space:nowrap;font-size:11px}
+.verify-email-screen{
+  display:grid!important;
+  place-items:center!important;
+  padding:20px!important;
+}
+.verify-email-card{
+  width:min(100%,470px);
+  padding:32px;
+  border-radius:26px;
+  background:rgba(255,255,255,.96);
+  border:1px solid rgba(139,92,246,.14);
+  box-shadow:0 22px 60px rgba(32,18,48,.18);
+}
+.verify-email-card .brand{font-size:27px;margin-bottom:28px}
+.verify-email-card h1{font-family:Georgia,serif;color:#28133F;font-size:31px;line-height:1.08;margin:8px 0 10px}
+.verify-email-card p{line-height:1.55;margin-bottom:20px}
+@media(max-width:560px){
+  .verification-banner{align-items:flex-start;flex-direction:column}
+  .verification-banner button{width:100%}
+  .verify-email-card{padding:24px 18px}
+}
