@@ -1409,10 +1409,14 @@
     let waitlist=state.onboarding?.waitlist||{};
     try{waitlist=await api("/api/v1/waitlist/status");}catch{}
     const ready=!!waitlist.ready;
-    const stateLabel=waitlist.state==="WAITLIST"?"Вы в листе ожидания":waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":"Профиль готов";
+    const stateLabel=
+      waitlist.state==="WAITLIST"?"Вы в листе ожидания":
+      waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":
+      waitlist.state==="CONTACT_VERIFICATION_REQUIRED"?"Нужно подтвердить контакт":
+      "Профиль готов";
     root.innerHTML='<main class="onboarding-page waitlist-page">'+
       '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div><button class="ghost" id="waitlist-profile">Профиль</button></header>'+
-      '<section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
+      '<section class="onboarding-shell">'+verificationBanner()+'<div class="onboarding-card waitlist-card">'+
         '<div class="waitlist-mark">'+(ready?"✓":"♡")+'</div>'+
         '<div class="eyebrow">Анкета завершена</div>'+
         '<h1>'+esc(stateLabel)+(p.display_name?" — "+esc(p.display_name):"")+'</h1>'+
@@ -1425,6 +1429,7 @@
         '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
         '<button class="secondary full" id="waitlist-edit">Изменить профиль</button>'+
       '</div></section></main>';
+    bindVerificationBanner();
     document.getElementById("waitlist-home").onclick=()=>setRoute("home");
     document.getElementById("waitlist-edit").onclick=()=>setRoute("profile");
     document.getElementById("waitlist-profile").onclick=()=>setRoute("profile");
