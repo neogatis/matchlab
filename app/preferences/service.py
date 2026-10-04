@@ -147,9 +147,12 @@ def set_preference(
         importance != "IGNORE"
         and spec["kind"] in {"multi", "multi_text"}
         and isinstance(value, list)
-        and any(str(item).strip().upper() == "ANY" for item in value)
     ):
-        importance = "IGNORE"
+        normalized_any = [str(item).strip().upper() for item in value if str(item).strip()]
+        if "ANY" in normalized_any and len(normalized_any) > 1:
+            raise InvalidPreference("ANY cannot be combined with other options")
+        if normalized_any == ["ANY"]:
+            importance = "IGNORE"
 
     normalized: dict[str, Any] = {}
     if importance != "IGNORE":
