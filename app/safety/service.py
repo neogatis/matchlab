@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.analytics.events import EVENT_REPORT_CREATED, EVENT_USER_BLOCKED, track_event
 from app.db.models import (
     AuditLog,
     Block,
@@ -63,6 +64,13 @@ def block_user(db: Session, *, blocker: int, blocked: int, now: datetime | None 
         row = Block(blocker=blocker, blocked=blocked, created_at=now)
         db.add(row)
         db.flush()
+        track_event(
+            db,
+            event_type=EVENT_USER_BLOCKED,
+            user_id=blocker,
+            metadata={"blocked_user_id": blocked},
+            now=now,
+        )
     return row
 
 
@@ -91,6 +99,13 @@ def report_user(db: Session, *, reporter: int, target_user: int, reason: str, no
     row = Report(reporter=reporter, target_user=target_user, reason=_validate_reason(reason), status="OPEN", created_at=now)
     db.add(row)
     db.flush()
+    track_event(
+        db,
+        event_type=EVENT_REPORT_CREATED,
+        user_id=reporter,
+        metadata={"target_user_id": target_user, "reason": row.reason},
+        now=now,
+    )
     return row
 
 

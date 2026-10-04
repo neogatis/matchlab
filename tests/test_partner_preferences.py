@@ -86,6 +86,16 @@ class PartnerPreferenceTests(unittest.TestCase):
                     value=["ANY","NO_CHILDREN"],
                 )
 
+    def test_legacy_any_value_is_normalized_to_ignore(self):
+        with Session(self.engine) as db:
+            row=prefs.set_preference(
+                db,user_id=self.user_id,key="smoking",importance="PREFERENCE",
+                value=["ANY"],
+            )
+            db.commit()
+            self.assertEqual(row.importance,"IGNORE")
+            self.assertIsNone(row.values_json)
+
     def test_ignore_explicitly_clears_stored_value(self):
         with Session(self.engine) as db:
             row=prefs.set_preference(

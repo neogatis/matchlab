@@ -100,7 +100,7 @@ def _criterion_match(
     target_market: Market,
 ) -> bool | None:
     if pref.importance == "IGNORE":
-        return True
+        return None
 
     if key == "age":
         if target_profile.dob is None:
@@ -150,7 +150,7 @@ def _criterion_match(
             return None
         values = _list_values(pref)
         if "ANY" in values:
-            return True
+            return None
         return target in values if values else None
 
     if key in {"religion", "nationality"}:
@@ -202,6 +202,10 @@ def mutual_hard_pass(db: Session, user_a: int, user_b: int) -> tuple[bool, str |
         return False, "source_user_inactive"
     if ub is None or ub.status != "ACTIVE":
         return False, "target_user_inactive"
+    if ua.email_verified_at is None and ua.phone_verified_at is None:
+        return False, "source_contact_unverified"
+    if ub.email_verified_at is None and ub.phone_verified_at is None:
+        return False, "target_contact_unverified"
     pa, pb = db.get(Profile, user_a), db.get(Profile, user_b)
     ma, mb = _market(db, pa), _market(db, pb)
     if not is_matchable(pa, ma):
@@ -210,11 +214,6 @@ def mutual_hard_pass(db: Session, user_a: int, user_b: int) -> tuple[bool, str |
         return False, "target_not_matchable"
     if _blocked(db, user_a, user_b):
         return False, "blocked"
-    if not _gender_direction_ok(pa, pb):
-        return False, "source_gender_direction"
-    if not _gender_direction_ok(pb, pa):
-        return False, "target_gender_direction"
-
     ok, key = _hard_filter_direction(db, pa, ma, pb, mb)
     if not ok:
         return False, f"source_hard:{key}"
@@ -436,6 +435,7 @@ def evaluate_pair(
         + readiness * FINAL_WEIGHTS["readiness"]
     ))
     distance = _haversine_km(ma, mb)
+    same_market = bool(ma is not None and mb is not None and ma.id == mb.id)
 
     return {
         "eligible": True,
@@ -446,7 +446,11 @@ def evaluate_pair(
         "activity_score": activity,
         "readiness_score": readiness,
         "final_mutual_fit_score": max(0, min(100, final)),
-        "distance_km": None if distance is None else round(distance, 1),
+        # Market coordinates are city centroids, not user GPS. Do not expose
+        # false person-to-person precision to the client.
+        "distance_km": None if distance is None or same_market else int(round(distance / 10.0) * 10),
+        "distance_precision": "city" if same_market else ("market_approx" if distance is not None else None),
+        "distance_label": "Один город" if same_market else ("Примерно между городами" if distance is not None else None),
     }
 
 
@@ -514,6 +518,10 @@ def rank_candidates(
         .where(
             Profile.user_id != user_id,
             User.status == "ACTIVE",
+            or_(
+                User.email_verified_at.is_not(None),
+                User.phone_verified_at.is_not(None),
+            ),
             Profile.profile_completed.is_(True),
             Profile.questionnaire_completed.is_(True),
             Profile.partner_preferences_completed.is_(True),

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.profile.service import recompute_profile_completion
+from app.analytics.events import EVENT_PARTNER_PREFERENCES_COMPLETED, track_once
 from app.db.models import Market, PartnerPreference, Profile
 from .catalog import CORE_PREFERENCE_KEYS, PREFERENCE_CATALOG, PREFERENCE_IMPORTANCE
 
@@ -139,6 +140,19 @@ def set_preference(
         raise PreferenceError("Profile not found")
 
     importance = _validate_importance(importance)
+
+    # Backward-compatible normalization for old web clients that encoded
+    # "Не важно" as a real value such as ["ANY"]. IGNORE must mean that
+    # the criterion takes no part in filtering or scoring.
+    if (
+        importance != "IGNORE"
+        and isinstance(value, list)
+        and len(value) == 1
+        and str(value[0]).upper() == "ANY"
+    ):
+        importance = "IGNORE"
+        value = None
+
     normalized: dict[str, Any] = {}
     if importance != "IGNORE":
         normalized = _validate_payload(db, key, value)
@@ -219,6 +233,13 @@ def recompute_completion(db: Session, *, user_id: int) -> bool:
     profile.partner_preferences_completed = bool(state["complete"])
     profile.updated_at = utcnow()
     db.flush()
+    if profile.partner_preferences_completed:
+        track_once(
+            db,
+            event_type=EVENT_PARTNER_PREFERENCES_COMPLETED,
+            user_id=user_id,
+            metadata={"configured_required": state["configured_required"]},
+        )
     recompute_profile_completion(db, user_id=user_id)
     return profile.partner_preferences_completed
 

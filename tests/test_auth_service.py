@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.auth import service as auth
-from app.db.models import AuthChallenge, Session as DbSession, User
+from app.db.models import AuthChallenge, MarketingAttribution, Session as DbSession, User
 
 
 def legacy_hash(password: str) -> str:
@@ -42,6 +42,43 @@ class AuthServiceTests(unittest.TestCase):
             ok, rehash = auth.verify_password("very-secure-password", user.password_hash)
             self.assertTrue(ok)
             self.assertFalse(rehash)
+
+    def test_registration_persists_first_touch_attribution(self):
+        with Session(self.engine) as db:
+            user=auth.register_email_user(
+                db,
+                "utm@example.com",
+                "very-secure-password",
+                referral_code="REF-ABC",
+                attribution={
+                    "utm_source":"meta",
+                    "utm_medium":"paid_social",
+                    "utm_campaign":"launch-almaty",
+                    "utm_content":"creative-1",
+                    "utm_term":"dating",
+                    "platform":"web",
+                },
+            )
+            db.commit()
+            row=db.get(MarketingAttribution,user.id)
+            self.assertEqual(row.utm_source,"meta")
+            self.assertEqual(row.utm_campaign,"launch-almaty")
+            self.assertEqual(row.utm_content,"creative-1")
+            self.assertEqual(row.referral_input,"REF-ABC")
+
+    def test_email_verification_request_creates_email_verify_challenge(self):
+        with Session(self.engine) as db:
+            user=auth.register_email_user(db,"verify-request@example.com","very-secure-password")
+            _, token=auth.request_email_verification_challenge(db,user_id=user.id)
+            db.commit()
+            self.assertTrue(token)
+            verified=auth.verify_email_challenge(
+                db,email=user.email,secret=token,
+            )
+            db.commit()
+            self.assertIsNotNone(verified.email_verified_at)
+            _, second=auth.request_email_verification_challenge(db,user_id=user.id)
+            self.assertIsNone(second)
 
     def test_legacy_password_is_transparently_upgraded(self):
         with Session(self.engine) as db:

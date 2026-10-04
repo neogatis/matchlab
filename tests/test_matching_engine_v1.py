@@ -81,8 +81,12 @@ class MatchingEngineTests(unittest.TestCase):
         nationality="",
         answer_value=3,
         updated_at=None,
+        verified=True,
     ):
-        user=User(email=email,password_hash="x",referral_code=email.split("@")[0])
+        user=User(
+            email=email,password_hash="x",referral_code=email.split("@")[0],
+            email_verified_at=self.now if verified else None,
+        )
         db.add(user); db.flush()
         p=Profile(
             user_id=user.id,
@@ -215,6 +219,41 @@ class MatchingEngineTests(unittest.TestCase):
             result=matching.evaluate_pair(db,a,b)
             self.assertFalse(result["eligible"])
             self.assertEqual(result["reason"],"blocked")
+
+    def test_unverified_contact_is_not_eligible_for_matching(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="verified@example.com",verified=True)
+            b=self.add_user(db,email="unverified@example.com",verified=False)
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertFalse(result["eligible"])
+            self.assertEqual(result["reason"],"target_contact_unverified")
+            ranked=matching.rank_candidates(db,user_id=a,limit=10,now=self.now)
+            self.assertNotIn(b,[item["user_id"] for item in ranked])
+
+    def test_ignore_and_legacy_any_do_not_inflate_soft_score(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a-ignore@example.com",lifestyle="ACTIVE")
+            b=self.add_user(db,email="b-ignore@example.com",lifestyle="CALM")
+            self.pref(db,a,"smoking","PREFERENCE",values=["ANY"])
+            self.pref(db,a,"alcohol","IGNORE",values=["ANY"])
+            self.pref(db,a,"lifestyle","PREFERENCE",values=["ACTIVE"])
+            db.commit()
+            pa,pb=db.get(Profile,a),db.get(Profile,b)
+            ma,mb=db.get(Market,pa.market_id),db.get(Market,pb.market_id)
+            direction=matching._soft_preference_direction(db,pa,ma,pb,mb)
+            self.assertEqual(direction,0)
+
+    def test_same_city_distance_is_not_exposed_as_fake_zero_km(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a-city@example.com")
+            b=self.add_user(db,email="b-city@example.com")
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertTrue(result["eligible"])
+            self.assertIsNone(result["distance_km"])
+            self.assertEqual(result["distance_precision"],"city")
+            self.assertEqual(result["distance_label"],"Один город")
 
     def test_hard_distance_uses_market_centroids(self):
         with Session(self.engine) as db:

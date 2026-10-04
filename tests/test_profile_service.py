@@ -105,6 +105,27 @@ class ProfileServiceTests(unittest.TestCase):
             db.commit()
             self.assertEqual(p.city, "Астана")
 
+    def test_other_city_requires_and_preserves_explicit_city_name(self):
+        with Session(self.engine) as db:
+            profiles.ensure_market(
+                db,code="KZ-OTHER",country_code="KZ",city_code="OTHER",
+                display_name="Другой город",timezone_name="Asia/Almaty",
+                currency_code="KZT",default_language="ru-KZ",
+                supported_languages=["ru-KZ","kk-KZ"],
+                registration_open=True,matching_open=False,
+            )
+            with self.assertRaises(profiles.ProfileError):
+                profiles.upsert_basic_profile(
+                    db,user_id=self.user_id,display_name="Dan",dob=date(1997,5,30),
+                    gender="M",seek_gender="F",market_code="KZ-OTHER",city_text="",
+                )
+            p=profiles.upsert_basic_profile(
+                db,user_id=self.user_id,display_name="Dan",dob=date(1997,5,30),
+                gender="M",seek_gender="F",market_code="KZ-OTHER",city_text="Тараз",
+            )
+            db.commit()
+            self.assertEqual(p.city,"Тараз")
+
     def test_relationship_and_open_state_semantics_match_v7(self):
         self.assertEqual(profiles.derive_status(True, "ACTIVE"), ("IN_RELATIONSHIP","NOT_ACTIVE_FOR_MATCHING"))
         self.assertEqual(profiles.derive_status(False, "ACTIVE"), ("ACTIVE_SEARCH","ACTIVE_FOR_MATCHING"))
