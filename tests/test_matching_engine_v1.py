@@ -290,6 +290,15 @@ class MatchingEngineTests(unittest.TestCase):
             db.commit()
             self.assertEqual(matching.mutual_preference_score(db,a,b),baseline)
 
+    def test_any_market_and_religion_are_neutral(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="ANY",religion="islam")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="ANY",religion="christian")
+            self.pref(db,a,"market","PREFERENCE",values=["ANY"])
+            self.pref(db,a,"religion","PREFERENCE",values=["ANY"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),50)
+
     def test_ignore_preference_is_not_in_soft_denominator(self):
         with Session(self.engine) as db:
             a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F",smoking="YES")
