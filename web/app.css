@@ -1821,3 +1821,174 @@ body{background:var(--bg)}
     grid-template-columns:1fr 1fr!important;
   }
 }
+
+
+/* CHAT + PREFERENCES UX P0 */
+.chat-shell{
+  max-width:860px!important;
+  min-height:calc(100dvh - 118px)!important;
+  padding-bottom:118px!important;
+}
+.chat-head{
+  position:sticky!important;
+  top:10px!important;
+  z-index:12!important;
+  display:grid!important;
+  grid-template-columns:44px 48px minmax(0,1fr) 44px!important;
+  align-items:center!important;
+  gap:10px!important;
+  min-height:68px!important;
+  padding:8px 10px!important;
+  border:1px solid rgba(139,92,246,.13)!important;
+  border-radius:20px!important;
+  background:rgba(255,255,255,.90)!important;
+  box-shadow:0 10px 30px rgba(65,35,100,.07)!important;
+  backdrop-filter:blur(18px)!important;
+}
+.chat-head .avatar.small{
+  width:46px!important;height:46px!important;border-radius:15px!important;object-fit:cover!important
+}
+.chat-title{min-width:0!important}
+.chat-title b{display:block!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:15px!important}
+.chat-title span{display:block!important;color:#7C3AED!important;font-size:11px!important;margin-top:3px!important}
+.chat-context{
+  width:max-content!important;
+  max-width:100%!important;
+  margin:10px auto 14px!important;
+  padding:7px 11px!important;
+  border-radius:12px!important;
+  background:#F6F0FF!important;
+  color:#6F5680!important;
+  font-size:11px!important;
+  border:1px solid rgba(139,92,246,.10)!important;
+}
+.messages{
+  display:flex!important;
+  flex-direction:column!important;
+  gap:8px!important;
+  min-height:420px!important;
+  padding:12px 6px 30px!important;
+  overflow:visible!important;
+}
+.bubble{
+  max-width:min(74%,560px)!important;
+  padding:10px 12px 7px!important;
+  border-radius:18px!important;
+  box-shadow:0 6px 18px rgba(65,35,100,.05)!important;
+  line-height:1.45!important;
+  word-break:break-word!important;
+}
+.bubble.theirs{
+  align-self:flex-start!important;
+  background:#fff!important;
+  color:#30213A!important;
+  border:1px solid rgba(139,92,246,.10)!important;
+  border-bottom-left-radius:6px!important;
+}
+.bubble.mine{
+  align-self:flex-end!important;
+  background:linear-gradient(135deg,#A765F8,#8357EE)!important;
+  color:#fff!important;
+  border-bottom-right-radius:6px!important;
+}
+.bubble-body{white-space:pre-wrap!important}
+.bubble-time{
+  display:block!important;
+  margin-top:5px!important;
+  text-align:right!important;
+  font-size:9px!important;
+  opacity:.68!important;
+}
+.bubble.pending{opacity:.72!important}
+.bubble.failed{
+  outline:1px solid #E15169!important;
+  opacity:.8!important;
+}
+.composer{
+  position:fixed!important;
+  z-index:30!important;
+  left:50%!important;
+  bottom:74px!important;
+  transform:translateX(-50%)!important;
+  width:min(calc(100% - 28px),820px)!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 50px!important;
+  gap:8px!important;
+  align-items:end!important;
+  padding:8px!important;
+  border:1px solid rgba(139,92,246,.14)!important;
+  border-radius:20px!important;
+  background:rgba(255,255,255,.96)!important;
+  box-shadow:0 16px 40px rgba(65,35,100,.13)!important;
+  backdrop-filter:blur(18px)!important;
+}
+.composer textarea{
+  width:100%!important;
+  min-height:48px!important;
+  max-height:120px!important;
+  padding:13px 14px!important;
+  resize:none!important;
+  border:0!important;
+  outline:0!important;
+  background:#F8F5FC!important;
+  border-radius:15px!important;
+  color:#30213A!important;
+  font:inherit!important;
+  line-height:1.35!important;
+}
+.composer .send{
+  width:50px!important;height:50px!important;
+  border:0!important;border-radius:15px!important;
+  background:linear-gradient(135deg,#A855F7,#7C3AED)!important;
+  color:#fff!important;font-size:18px!important;
+  box-shadow:0 8px 20px rgba(124,58,237,.24)!important;
+}
+.composer .send:disabled{opacity:.55!important}
+.chat-empty{margin:auto!important;box-shadow:none!important;border:0!important;background:transparent!important}
+
+.preference-grid{
+  display:grid!important;
+  grid-template-columns:1fr 1fr!important;
+  gap:12px!important;
+  margin:22px 0!important;
+}
+.preference-card{
+  padding:16px!important;
+  border:1px solid rgba(139,92,246,.13)!important;
+  border-radius:20px!important;
+  background:#fff!important;
+  box-shadow:0 8px 24px rgba(65,35,100,.04)!important;
+}
+.preference-card-head{margin-bottom:12px!important}
+.preference-card-head b{display:block!important;color:#28133F!important;font-size:14px!important}
+.preference-card-head span{display:block!important;margin-top:4px!important;color:#8B7D94!important;font-size:10px!important;line-height:1.35!important}
+.preference-value{margin-bottom:12px!important}
+.preference-importance{margin-top:2px!important}
+.preference-importance select{background:#F8F5FC!important}
+.range-pair{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
+.preferences-onboarding>p,.preferences-editor>p{max-width:720px!important}
+.input:invalid{box-shadow:none}
+.input option[disabled]{color:#9B8EA5}
+
+@media(max-width:680px){
+  .chat-shell{padding-left:10px!important;padding-right:10px!important;padding-bottom:126px!important}
+  .chat-head{
+    top:6px!important;
+    grid-template-columns:40px 42px minmax(0,1fr) 40px!important;
+    gap:7px!important;
+    border-radius:17px!important;
+  }
+  .chat-head .avatar.small{width:40px!important;height:40px!important;border-radius:13px!important}
+  .messages{min-height:360px!important;padding-left:2px!important;padding-right:2px!important}
+  .bubble{max-width:86%!important;font-size:14px!important}
+  .composer{
+    bottom:66px!important;
+    width:calc(100% - 16px)!important;
+    grid-template-columns:minmax(0,1fr) 46px!important;
+    border-radius:18px!important;
+  }
+  .composer textarea{min-height:46px!important;padding:12px!important}
+  .composer .send{width:46px!important;height:46px!important;border-radius:14px!important}
+  .preference-grid{grid-template-columns:1fr!important}
+  .preference-card{padding:14px!important}
+}
