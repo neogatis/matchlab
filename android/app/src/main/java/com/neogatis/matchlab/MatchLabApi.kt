@@ -310,6 +310,65 @@ class MatchLabApi(context: Context) {
         JSONObject().put("ticket", ticket),
     )
 
+    suspend fun getCandidates(limit: Int = 5): JSONObject =
+        get("/api/v1/discovery/candidates?limit=" + limit)
+
+    suspend fun decideCandidate(
+        candidateUserId: Long,
+        action: String,
+    ): JSONObject = post(
+        "/api/v1/discovery/decision",
+        JSONObject()
+            .put("candidate_user_id", candidateUserId)
+            .put("action", action),
+    )
+
+    suspend fun getMatches(): JSONObject = get("/api/v1/matches")
+
+    suspend fun openConversation(matchId: Long): JSONObject = post(
+        "/api/v1/matches/conversation",
+        JSONObject().put("match_id", matchId),
+    )
+
+    suspend fun getConversations(): JSONObject =
+        get("/api/v1/chat/conversations")
+
+    suspend fun getMessages(
+        conversationId: Long,
+        limit: Int = 50,
+        beforeId: Long? = null,
+    ): JSONObject {
+        var path = "/api/v1/chat/messages?conversation_id=" + conversationId +
+            "&limit=" + limit
+        if (beforeId != null) {
+            path += "&before_id=" + beforeId
+        }
+        return get(path)
+    }
+
+    suspend fun sendMessage(
+        conversationId: Long,
+        body: String,
+        clientMessageId: String,
+    ): JSONObject = post(
+        "/api/v1/chat/messages",
+        JSONObject()
+            .put("conversation_id", conversationId)
+            .put("body", body)
+            .put("client_message_id", clientMessageId),
+    )
+
+    suspend fun markConversationRead(
+        conversationId: Long,
+        throughMessageId: Long? = null,
+    ): JSONObject {
+        val payload = JSONObject().put("conversation_id", conversationId)
+        if (throughMessageId != null) {
+            payload.put("through_message_id", throughMessageId)
+        }
+        return post("/api/v1/chat/read", payload)
+    }
+
     suspend fun getWaitlistStatus(): JSONObject = get("/api/v1/waitlist/status")
 
     suspend fun getCompatibilityProfile(): JSONObject = get("/api/v1/compatibility/me")
