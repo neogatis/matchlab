@@ -6,6 +6,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import phonenumbers
@@ -40,9 +41,10 @@ class SmsSendResult:
     message_id: str | None
 
 
-class SmsSender:
+class SmsSender(ABC):
+    @abstractmethod
     def send_otp(self, *, phone_e164: str, code: str) -> SmsSendResult:
-        raise NotImplementedError
+        ...
 
 
 class TwilioSmsSender(SmsSender):
