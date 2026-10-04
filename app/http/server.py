@@ -134,6 +134,7 @@ from app.profile.service import (
     ProfileError,
     UnderageUser,
     profile_completion_state,
+    ensure_market,
     set_match_profile_details,
     set_readiness,
     set_relationship_state,
@@ -305,6 +306,32 @@ def phone_auth_configured() -> bool:
             for name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
         ) and has_sender
     return False
+
+
+def _ensure_launch_markets(db) -> None:
+    markets = (
+        ("KZ-ALA", "ALA", "Алматы", 43.238949, 76.889709, True),
+        ("KZ-AST", "AST", "Астана", 51.169392, 71.449074, False),
+        ("KZ-SHY", "SHY", "Шымкент", 42.3417, 69.5901, False),
+        ("KZ-KAR", "KAR", "Караганда", 49.8064, 73.0855, False),
+        ("KZ-OTHER", "OTHER", "Другой город", None, None, False),
+    )
+    for code, city_code, name, lat, lon, matching_open in markets:
+        ensure_market(
+            db,
+            code=code,
+            country_code="KZ",
+            city_code=city_code,
+            display_name=name,
+            timezone_name="Asia/Almaty",
+            currency_code="KZT",
+            default_language="ru-KZ",
+            supported_languages=["ru-KZ", "kk-KZ"],
+            latitude=lat,
+            longitude=lon,
+            registration_open=True,
+            matching_open=matching_open,
+        )
 
 
 def password_reset_email_configured() -> bool:
@@ -1557,6 +1584,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
 
             if method == "POST" and path == f"{API_PREFIX}/profile/basic":
                 body = self._body()
+                _ensure_launch_markets(db)
                 dob = date.fromisoformat(str(body.get("dob", "")))
                 row = upsert_basic_profile(
                     db,
@@ -1567,6 +1595,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     seek_gender=str(body.get("seek_gender", "")),
                     market_code=str(body.get("market_code", "")),
                     preferred_locale=body.get("preferred_locale"),
+                    city_name=str(body.get("city", "")),
                 )
                 self._send_json(HTTPStatus.OK, {"ok": True, "user_id": row.user_id})
                 return
@@ -1686,6 +1715,30 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/markets":
+                _ensure_launch_markets(db)
+                rows = list(
+                    db.execute(
+                        select(Market)
+                        .where(Market.registration_open.is_(True))
+                        .order_by(Market.id)
+                    ).scalars()
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "markets": [
+                            {
+                                "code": item.code,
+                                "display_name": item.display_name,
+                                "matching_open": item.matching_open,
+                            }
+                            for item in rows
+                        ]
+                    },
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/preferences":
                 self._send_json(
                     HTTPStatus.OK,
@@ -1698,6 +1751,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
 
             if method == "POST" and path == f"{API_PREFIX}/preferences":
                 body = self._body()
+                _ensure_launch_markets(db)
                 self._send_json(
                     HTTPStatus.OK,
                     set_preferences(
