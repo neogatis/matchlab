@@ -80,6 +80,7 @@ class InterestServiceTests(unittest.TestCase):
             email=email,
             password_hash="x",
             referral_code=email.split("@")[0],
+            email_verified_at=self.now,
         )
         db.add(user)
         db.flush()
@@ -216,7 +217,7 @@ class InterestServiceTests(unittest.TestCase):
                 db.query(ProductEvent)
                 .filter_by(event_type="MUTUAL_MATCH_CREATED")
                 .count(),
-                1,
+                2,
             )
             self.assertEqual(
                 db.query(MatchScoreComponent)
