@@ -13,6 +13,76 @@
     poller: null,
   };
 
+  function safeStorage(storage,key,value){
+    try{
+      if(arguments.length===2)return storage.getItem(key);
+      storage.setItem(key,value);
+    }catch{}
+    return null;
+  }
+
+  function captureFirstTouchAttribution(){
+    let saved={};
+    try{saved=JSON.parse(safeStorage(localStorage,"ml_first_touch_attribution")||"{}")||{}}catch{}
+    const params=new URLSearchParams(location.search);
+    const referral=params.get("ref")||params.get("referral")||params.get("referral_code")||"";
+    const incoming={
+      utm_source:params.get("utm_source")||"",
+      utm_medium:params.get("utm_medium")||"",
+      utm_campaign:params.get("utm_campaign")||"",
+      utm_content:params.get("utm_content")||"",
+      utm_term:params.get("utm_term")||"",
+      referral_input:referral,
+    };
+    let changed=false;
+    Object.entries(incoming).forEach(([key,value])=>{
+      if(value&&!saved[key]){saved[key]=value;changed=true}
+    });
+    if(changed||!safeStorage(localStorage,"ml_first_touch_attribution")){
+      safeStorage(localStorage,"ml_first_touch_attribution",JSON.stringify(saved));
+    }
+    return saved;
+  }
+
+  function attribution(){
+    try{return JSON.parse(safeStorage(localStorage,"ml_first_touch_attribution")||"{}")||{}}catch{return {}}
+  }
+
+  function visitorId(){
+    let id=safeStorage(localStorage,"ml_visitor_id");
+    if(!id){
+      id=(crypto.randomUUID?crypto.randomUUID():"v-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+      safeStorage(localStorage,"ml_visitor_id",id);
+    }
+    return id;
+  }
+
+  async function trackAnonymous(eventType,metadata={}){
+    try{
+      await post("/api/v1/analytics/event",{
+        event_type:eventType,
+        visitor_id:visitorId(),
+        metadata:{...attribution(),...metadata},
+      });
+    }catch{}
+  }
+
+  function trackRegistrationStarted(){
+    if(safeStorage(sessionStorage,"ml_registration_started"))return;
+    safeStorage(sessionStorage,"ml_registration_started","1");
+    trackAnonymous("REGISTRATION_STARTED");
+  }
+
+  function trackCandidateViewed(candidateId){
+    const key="ml_candidate_viewed_"+candidateId;
+    if(safeStorage(sessionStorage,key))return;
+    safeStorage(sessionStorage,key,"1");
+    post("/api/v1/analytics/product",{
+      event_type:"CANDIDATE_VIEWED",
+      metadata:{candidate_user_id:Number(candidateId)}
+    }).catch(()=>{});
+  }
+
   const esc = (value="") => String(value)
     .replaceAll("&","&amp;").replaceAll("<","&lt;")
     .replaceAll(">","&gt;").replaceAll('"',"&quot;")
@@ -151,7 +221,8 @@
       '</div>' +
     '</main>';
     document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
-    document.getElementById("auth-register-tab").onclick = () => renderAuth("register");
+    document.getElementById("auth-register-tab").onclick = () => {trackRegistrationStarted();renderAuth("register")};
+    if(register)trackRegistrationStarted();
     register ? bindRegister() : bindLogin();
   }
 
@@ -376,7 +447,11 @@
       const code = document.getElementById("reg-phone-code").value.trim();
       status("Создаём профиль…");
       try {
-        await post("/api/v1/auth/phone/register/verify",{phone,password,code});
+        await post("/api/v1/auth/phone/register/verify",{
+          phone,password,code,
+          referral_code:attribution().referral_input||null,
+          attribution:attribution()
+        });
         await afterAuth();
       } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
     };
@@ -388,7 +463,11 @@
       if (password.length < 10) return status("Пароль — минимум 10 символов.", true);
       status("Создаём аккаунт…");
       try {
-        await post("/api/v1/auth/register",{email,password});
+        await post("/api/v1/auth/register",{
+          email,password,
+          referral_code:attribution().referral_input||null,
+          attribution:attribution()
+        });
         await afterAuth();
       } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
     };
@@ -628,6 +707,7 @@
       btn.onclick = () => {
         const id = Number(btn.dataset.candidateDetail);
         state.currentCandidate = state.candidates.find(x => Number(x.user_id) === id);
+        trackCandidateViewed(id);
         setRoute("candidate");
       };
     });
@@ -1036,6 +1116,31 @@
     return item ? item[0] : null;
   }
 
+  function verificationBanner(){
+    const v=state.onboarding?.verification||state.profile?.verification||{};
+    if(v.contact_verified)return "";
+    if(!v.email)return '<div class="verification-banner"><div><b>Подтвердите контакт</b><span>Для активного подбора нужен подтверждённый email или телефон.</span></div></div>';
+    return '<div class="verification-banner"><div><b>Подтвердите email</b><span>Анкету можно продолжать. Подбор включится после подтверждения email или телефона.</span></div>'+
+      '<button class="secondary" id="verify-email-resend">'+(v.email_delivery_available?"Отправить письмо":"Email пока не настроен")+'</button></div>';
+  }
+
+  function bindVerificationBanner(){
+    const btn=pick("verify-email-resend");
+    if(!btn)return;
+    const v=state.onboarding?.verification||state.profile?.verification||{};
+    if(!v.email_delivery_available){btn.disabled=true;return}
+    btn.onclick=async()=>{
+      btn.disabled=true;btn.textContent="Отправляем…";
+      try{
+        await post("/api/v1/auth/email/verification/request");
+        btn.textContent="Письмо отправлено ✓";
+      }catch(e){
+        btn.disabled=false;btn.textContent="Отправить ещё раз";
+        onboardingStatus("Не удалось отправить письмо: "+e.message,true);
+      }
+    };
+  }
+
   function onboardingChrome(step, body) {
     const idx=Math.max(0,ONBOARDING_STEPS.findIndex(([key])=>key===step));
     const pct=Math.round((idx/ONBOARDING_STEPS.length)*100);
@@ -1043,6 +1148,7 @@
       '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div>'+
       '<button class="ghost" id="onboarding-exit">Позже</button></header>'+
       '<section class="onboarding-shell">'+
+        verificationBanner()+
         '<div class="onboarding-progress"><div class="progress-copy"><span>Шаг '+(idx+1)+' из '+ONBOARDING_STEPS.length+'</span><b>'+esc(ONBOARDING_STEPS[idx]?.[1]||"Анкета")+'</b></div>'+
         '<div class="progress-track"><i style="width:'+pct+'%"></i></div></div>'+
         body+
@@ -1166,6 +1272,7 @@
     }
 
     root.innerHTML=onboardingChrome(step,body);
+    bindVerificationBanner();
     pick("onboarding-exit").onclick=()=>setRoute("home");
 
     if(step==="basic"){
@@ -1346,6 +1453,7 @@
       '<button type="button" class="primary full questionnaire-continue" id="questionnaire-continue" disabled>Сначала выберите ответ</button>'+
       '<button type="button" class="ghost full" id="questionnaire-later">Продолжить позже</button>'+
       '</div>');
+    bindVerificationBanner();
     pick("onboarding-exit").onclick=()=>setRoute("home");
     pick("questionnaire-later").onclick=()=>setRoute("home");
     let selectedAnswer = null;
@@ -1816,10 +1924,48 @@
     };
   }
 
+  function hashQuery(){
+    const raw=location.hash||"";
+    const q=raw.includes("?")?raw.slice(raw.indexOf("?")+1):"";
+    return new URLSearchParams(q);
+  }
+
+  async function renderEmailVerification(){
+    clearPoller();
+    const params=hashQuery();
+    const email=params.get("email")||"";
+    const challenge=params.get("challenge")||"";
+    root.innerHTML='<main class="auth-screen verify-email-screen"><div class="verify-email-card">'+
+      '<div class="brand">Match<span>Lab</span></div>'+
+      '<div class="eyebrow">Подтверждение email</div>'+
+      '<h1 id="verify-email-title">Проверяем ссылку…</h1>'+
+      '<p class="muted" id="verify-email-copy">Это займёт несколько секунд.</p>'+
+      '<button class="primary full" id="verify-email-continue" hidden>Продолжить →</button>'+
+    '</div></main>';
+    const title=pick("verify-email-title"),copy=pick("verify-email-copy"),btn=pick("verify-email-continue");
+    if(!email||!challenge){
+      title.textContent="Ссылка неполная";
+      copy.textContent="Запросите новое письмо подтверждения в MatchLab.";
+      btn.hidden=false;btn.textContent="Открыть MatchLab";btn.onclick=()=>setRoute("home");
+      return;
+    }
+    try{
+      await post("/api/v1/auth/email/verify",{email,challenge});
+      title.textContent="Email подтверждён ✓";
+      copy.textContent="Теперь подтверждение не будет мешать активному подбору.";
+      btn.hidden=false;btn.onclick=async()=>{await loadMe();setRoute("home")};
+    }catch(e){
+      title.textContent="Ссылка истекла или уже использована";
+      copy.textContent="Откройте MatchLab и запросите новое письмо подтверждения.";
+      btn.hidden=false;btn.textContent="Открыть MatchLab";btn.onclick=()=>setRoute("home");
+    }
+  }
+
   async function renderRoute(force=false) {
     clearPoller();
     const route=(location.hash||"#home").slice(1).split("?")[0];
     if(route==="reset-password") return renderPasswordReset();
+    if(route==="verify-email") return renderEmailVerification();
     if(!state.authenticated){
       try{
         await api("/api/v1/auth/methods");
@@ -1848,6 +1994,11 @@
 
   window.addEventListener("hashchange",()=>renderRoute());
   window.addEventListener("load",async()=>{
+    captureFirstTouchAttribution();
+    if(!safeStorage(sessionStorage,"ml_landing_view")){
+      safeStorage(sessionStorage,"ml_landing_view","1");
+      trackAnonymous("LANDING_VIEW");
+    }
     if("serviceWorker" in navigator) navigator.serviceWorker.register("/web/sw.js").catch(()=>{});
     await renderRoute();
   });
