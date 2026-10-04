@@ -1039,3 +1039,119 @@ body{background:var(--bg)}
 @media(max-width:760px){
   .auth-hero-photo{object-position:58% center!important}
 }
+
+
+/* AUTH HERO NO-CROP FIX V16 */
+.auth-screen{
+  background:
+    linear-gradient(rgba(23,16,32,.28),rgba(23,16,32,.28)),
+    url("/web/hero.jpg?v=16") center center/cover no-repeat fixed!important;
+}
+.auth-hero-photo{
+  object-fit:contain!important;
+  object-position:center center!important;
+  width:100vw!important;
+  height:100vh!important;
+  max-width:none!important;
+  max-height:none!important;
+}
+@media(max-width:760px){
+  .auth-screen{
+    background-position:center center!important;
+    background-attachment:scroll!important;
+  }
+  .auth-hero-photo{
+    object-fit:contain!important;
+    object-position:center center!important;
+  }
+}
+
+
+/* AUTH MOBILE FLOW FIX V17 */
+@media(max-width:900px){
+  .auth-screen{
+    overflow-y:auto!important;
+    min-height:100dvh!important;
+  }
+  .auth-wrap{
+    display:block!important;
+    width:min(100%,560px)!important;
+    min-height:auto!important;
+    margin:0 auto!important;
+    padding:calc(18px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom))!important;
+  }
+  .auth-logo{
+    position:relative!important;
+    top:auto!important;
+    left:auto!important;
+    right:auto!important;
+    margin:0 0 clamp(130px,28vh,230px)!important;
+    text-align:center!important;
+  }
+  .auth-tagline{
+    position:relative!important;
+    width:100%!important;
+    margin:0 0 16px!important;
+    padding:0 4px!important;
+  }
+  .auth-tagline h1{
+    max-width:100%!important;
+    margin:0 0 10px!important;
+    font-size:clamp(29px,8.8vw,38px)!important;
+    line-height:1.02!important;
+    letter-spacing:-1px!important;
+  }
+  .auth-tagline p{
+    max-width:100%!important;
+    margin:0!important;
+    font-size:14px!important;
+    line-height:1.45!important;
+  }
+  .auth-panel{
+    position:relative!important;
+    width:100%!important;
+    margin:0!important;
+  }
+  .auth-legal{
+    position:relative!important;
+    margin:12px 12px 0!important;
+    transform:none!important;
+    line-height:1.45!important;
+  }
+}
+@media(max-width:430px){
+  .auth-logo{
+    margin-bottom:clamp(105px,23vh,180px)!important;
+  }
+  .auth-logo .brand{
+    font-size:30px!important;
+  }
+  .auth-tagline{
+    margin-bottom:12px!important;
+  }
+  .auth-tagline h1{
+    font-size:28px!important;
+    line-height:1.04!important;
+  }
+  .auth-tagline p{
+    font-size:13px!important;
+  }
+  .auth-card h2{
+    font-size:25px!important;
+    line-height:1.08!important;
+  }
+}
+@media(max-width:430px) and (max-height:720px){
+  .auth-logo{
+    margin-bottom:86px!important;
+  }
+  .auth-tagline h1{
+    font-size:25px!important;
+  }
+  .auth-tagline p{
+    font-size:12px!important;
+  }
+  .auth-card{
+    padding:14px!important;
+  }
+}
