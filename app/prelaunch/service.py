@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.events import EVENT_WAITLIST_JOINED, track_once
 from app.db.models import (
     Profile,
     QuestionnaireAnswer,
@@ -93,7 +94,9 @@ def waitlist_status(
         raise PrelaunchError("profile_not_found")
 
     completion = profile_completion_state(profile)
-    ready = (
+    market = db.get(Market, profile.market_id) if profile.market_id is not None else None
+    contact_verified = bool(user.phone_verified_at or user.email_verified_at)
+    profile_ready = (
         user.status == "ACTIVE"
         and completion["basic"]
         and completion["details"]
@@ -105,13 +108,25 @@ def waitlist_status(
         and profile.eligibility_status == "ACTIVE_FOR_MATCHING"
         and profile.relationship_status in {"ACTIVE_SEARCH", "OPEN_TO_MATCH"}
     )
+    market_matching_open = bool(market and market.matching_open)
+    ready = bool(profile_ready and contact_verified and market_matching_open)
 
     prelaunch = prelaunch_mode(db)
     output_enabled = candidate_output_enabled(db)
 
-    if not ready:
+    if not profile_ready:
         state = "PROFILE_INCOMPLETE_OR_INACTIVE"
         message = "Завершите профиль и оставьте статус знакомства активным."
+    elif not contact_verified:
+        state = "CONTACT_VERIFICATION_REQUIRED"
+        message = "Профиль заполнен. Подтвердите email или телефон, чтобы участвовать в подборе."
+    elif not market_matching_open:
+        state = "CITY_WAITLIST"
+        city = profile.city or (market.display_name if market else "вашем городе")
+        message = (
+            f"Профиль сохранён. MatchLab пока запускается в Алматы; "
+            f"мы сообщим, когда подбор откроется в городе {city}."
+        )
     elif prelaunch and not output_enabled:
         state = "WAITLIST"
         message = (
@@ -125,12 +140,27 @@ def waitlist_status(
         state = "READY"
         message = "Профиль готов."
 
+    if profile_ready and state in {"WAITLIST", "CITY_WAITLIST"}:
+        track_once(
+            db,
+            event_type=EVENT_WAITLIST_JOINED,
+            user_id=user_id,
+            metadata={"waitlist_state": state},
+        )
+
     return {
         "state": state,
         "ready": ready,
+        "profile_ready": profile_ready,
+        "contact_verified": contact_verified,
+        "email_verified": bool(user.email_verified_at),
+        "phone_verified": bool(user.phone_verified_at),
         "completion": completion,
         "relationship_status": profile.relationship_status,
         "eligibility_status": profile.eligibility_status,
+        "market_code": market.code if market else None,
+        "market_name": profile.city or (market.display_name if market else ""),
+        "market_matching_open": market_matching_open,
         "features": feature_flags(db),
         "message": message,
     }
