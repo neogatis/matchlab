@@ -89,6 +89,8 @@ from app.interests.service import (
     InterestError,
     InterestUnavailable,
     PairAlreadyMatched,
+    _create_match,
+    get_match,
     record_decision,
 )
 from app.matching.service import rank_candidates
@@ -462,6 +464,92 @@ def _test_candidate_payloads(db, *, viewer_id: int) -> list[dict[str, Any]]:
         payload["is_test_profile"] = True
         payloads.append(payload)
     return payloads
+
+
+def _ensure_test_mutual_chats(db, *, viewer_id: int) -> None:
+    if not _test_viewer_enabled(viewer_id):
+        return
+
+    test_users = list(
+        db.execute(
+            select(User).where(User.email.in_(tuple(TEST_PROFILE_EMAILS)))
+        ).scalars()
+    )
+    now = datetime.now(timezone.utc)
+    welcome_copy = {
+        "matchlab.virtual.anna@test.invalid":
+            "Привет 🙂 Увидела, что у нас высокая совместимость. Что для тебя самое важное в хорошем знакомстве?",
+        "matchlab.virtual.alina@test.invalid":
+            "Привет! Похоже, у нас много общего по анкете. Чем ты любишь заниматься, когда есть свободный вечер?",
+    }
+
+    for test_user in test_users:
+        if test_user.id == viewer_id:
+            continue
+        meta = TEST_PROFILE_EMAILS[test_user.email]
+
+        for from_user, to_user in (
+            (viewer_id, test_user.id),
+            (test_user.id, viewer_id),
+        ):
+            row = db.get(Interest, (from_user, to_user))
+            if row is None:
+                row = Interest(
+                    from_user=from_user,
+                    to_user=to_user,
+                    state="INTERESTED",
+                    source_algorithm_version="test-profile-v1",
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(row)
+            else:
+                row.state = "INTERESTED"
+                row.source_algorithm_version = "test-profile-v1"
+                row.snooze_until = None
+                row.updated_at = now
+
+        db.flush()
+
+        match = get_match(db, viewer_id, test_user.id)
+        if match is None:
+            match = _create_match(
+                db,
+                user_a=viewer_id,
+                user_b=test_user.id,
+                evaluated={
+                    "compatibility_score": meta["score"],
+                    "final_mutual_fit_score": meta["score"],
+                    "algorithm_version": "test-profile-v1",
+                    "category_scores": meta["categories"],
+                    "mutual_preference_score": 88,
+                    "activity_score": 90,
+                    "readiness_score": 95,
+                },
+                now=now,
+            )
+
+        conversation = get_or_create_conversation(
+            db,
+            match_id=match.id,
+            user_id=viewer_id,
+            now=now,
+        )
+        existing_messages = list_messages(
+            db,
+            conversation_id=conversation.id,
+            user_id=viewer_id,
+            limit=1,
+        )
+        if not existing_messages:
+            send_message(
+                db,
+                conversation_id=conversation.id,
+                sender_id=test_user.id,
+                body=welcome_copy[test_user.email],
+                client_message_id=f"test-welcome-{test_user.id}",
+                now=now,
+            )
 
 
 def _record_test_decision(
@@ -1996,6 +2084,10 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/chat/conversations":
+                _ensure_test_mutual_chats(
+                    db,
+                    viewer_id=principal.user_id,
+                )
                 conversations = list_conversations(
                     db,
                     user_id=principal.user_id,
