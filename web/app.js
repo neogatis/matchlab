@@ -1074,9 +1074,126 @@
     el.hidden=false;
   }
 
+  const MARKET_OPTIONS=[
+    ["KZ-ALA","Алматы"],
+    ["KZ-AST","Астана"],
+    ["KZ-CIT","Шымкент"],
+    ["KZ-KGF","Караганда"],
+    ["KZ-OTHER","Другой город"],
+  ];
+  const PARTNER_MARKET_OPTIONS=MARKET_OPTIONS.filter(([code])=>code!=="KZ-OTHER");
+
+  function prefStored(values,key){
+    return values?.[key]||{};
+  }
+  function prefFirst(values,key){
+    const value=prefStored(values,key).value;
+    return Array.isArray(value)&&value.length?value[0]:"";
+  }
+  function prefRangeValue(values,key,part){
+    const value=prefStored(values,key).value;
+    return value&&typeof value==="object"&&value[part]!=null?value[part]:"";
+  }
+  function preferenceEditorHtml(prefix,values,profile={}){
+    const imp=(key)=>prefStored(values,key).importance||"";
+    const gender=prefFirst(values,"gender")||( ["M","F","OTHER"].includes(profile.seek_gender)?profile.seek_gender:"");
+    const card=(key,title,control,note="") =>
+      '<article class="preference-editor-card" data-pref-card="'+key+'">'+
+        '<div class="preference-editor-title"><b>'+esc(title)+'</b>'+(note?'<span>'+esc(note)+'</span>':'')+'</div>'+
+        '<div class="preference-editor-controls"><label>Насколько это важно?'+importanceSelect(prefix+"-"+key+"-importance",imp(key))+'</label>'+control+'</div>'+
+      '</article>';
+    return '<div class="preference-editor">'+
+      card("age","Возраст партнёра",
+        '<div class="preference-value-grid"><label>От<input class="input" id="'+prefix+'-age-min" type="number" min="18" max="100" value="'+esc(prefRangeValue(values,"age","min"))+'" placeholder="18+"></label><label>До<input class="input" id="'+prefix+'-age-max" type="number" min="18" max="100" value="'+esc(prefRangeValue(values,"age","max"))+'" placeholder="Например, 35"></label></div>',
+        "Диапазон не задаётся автоматически")+
+      card("gender","Пол партнёра",
+        '<label>Кого рассматриваете?'+selectHtml(prefix+"-gender",gender,[["F","Женщину"],["M","Мужчину"],["OTHER","Другой вариант"]],"Выберите вариант")+'</label>')+
+      card("market","Город партнёра",
+        '<label>Город'+selectHtml(prefix+"-market",prefFirst(values,"market"),PARTNER_MARKET_OPTIONS,"Выберите город")+'</label>',
+        "Можно оставить неважным")+
+      card("distance_km","Расстояние",
+        '<label>Максимум, км<input class="input" id="'+prefix+'-distance_km-max" type="number" min="1" max="1000" value="'+esc(prefRangeValue(values,"distance_km","max"))+'" placeholder="Например, 50"></label>',
+        "Ориентировочно между городами, без GPS-точности")+
+      card("dating_goal","Цель знакомства",
+        '<label>Цель'+selectHtml(prefix+"-dating_goal",prefFirst(values,"dating_goal"),[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не определился(ась)"]])+'</label>')+
+      card("children_status","Наличие детей",
+        '<label>У партнёра'+selectHtml(prefix+"-children_status",prefFirst(values,"children_status"),[["NO_CHILDREN","Нет детей"],["HAS_CHILDREN","Есть дети"]])+'</label>')+
+      card("children_plans","Планы на детей",
+        '<label>Планы'+selectHtml(prefix+"-children_plans",prefFirst(values,"children_plans"),[["WANTS","Хочет детей"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет детей"]])+'</label>')+
+      card("smoking","Курение",
+        '<label>Курение'+selectHtml(prefix+"-smoking",prefFirst(values,"smoking"),[["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])+'</label>')+
+      card("alcohol","Алкоголь",
+        '<label>Алкоголь'+selectHtml(prefix+"-alcohol",prefFirst(values,"alcohol"),[["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>')+
+      card("lifestyle","Образ жизни",
+        '<label>Ритм'+selectHtml(prefix+"-lifestyle",prefFirst(values,"lifestyle"),[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>')+
+      card("height","Рост",
+        '<div class="preference-value-grid"><label>От, см<input class="input" id="'+prefix+'-height-min" type="number" min="100" max="250" value="'+esc(prefRangeValue(values,"height","min"))+'" placeholder="Например, 160"></label><label>До, см<input class="input" id="'+prefix+'-height-max" type="number" min="100" max="250" value="'+esc(prefRangeValue(values,"height","max"))+'" placeholder="Например, 190"></label></div>')+
+      card("religion","Религия",
+        '<label>Значение<input class="input" id="'+prefix+'-religion-text" maxlength="120" value="'+esc(prefFirst(values,"religion"))+'" placeholder="Например, ислам"></label>')+
+      card("nationality","Национальность",
+        '<label>Значение<input class="input" id="'+prefix+'-nationality-text" maxlength="120" value="'+esc(prefFirst(values,"nationality"))+'" placeholder="Самоопределение"></label>')+
+    '</div>';
+  }
+
+  function bindPreferenceImportance(prefix){
+    document.querySelectorAll('[id^="'+prefix+'-"][id$="-importance"]').forEach(select=>{
+      const key=select.id.slice((prefix+"-").length,-"-importance".length);
+      const card=document.querySelector('[data-pref-card="'+key+'"]');
+      const refresh=()=>{
+        const ignored=select.value==="IGNORE";
+        card?.querySelectorAll("input,select").forEach(el=>{
+          if(el===select)return;
+          el.disabled=ignored;
+          if(ignored) el.setCustomValidity("");
+        });
+        card?.classList.toggle("ignored",ignored);
+      };
+      select.onchange=refresh;refresh();
+    });
+  }
+
+  function collectPreferences(prefix){
+    const keys=["age","gender","market","distance_km","dating_goal","children_status","children_plans","smoking","alcohol","lifestyle","height","religion","nationality"];
+    const out={};
+    for(const key of keys){
+      const importance=pick(prefix+"-"+key+"-importance")?.value||"";
+      if(!importance) throw new Error("Укажите важность для каждого критерия.");
+      if(importance==="IGNORE"){out[key]={importance:"IGNORE"};continue}
+
+      let value=null;
+      if(key==="age"){
+        const min=Number(pick(prefix+"-age-min").value),max=Number(pick(prefix+"-age-max").value);
+        if(!Number.isInteger(min)||!Number.isInteger(max)||min<18||max>100||max<min)
+          throw new Error("Проверьте возраст партнёра: от 18 до 100, «до» не меньше «от».");
+        value={min,max};
+      }else if(key==="height"){
+        const min=Number(pick(prefix+"-height-min").value),max=Number(pick(prefix+"-height-max").value);
+        if(!Number.isInteger(min)||!Number.isInteger(max)||min<100||max>250||max<min)
+          throw new Error("Проверьте диапазон роста.");
+        value={min,max};
+      }else if(key==="distance_km"){
+        const max=Number(pick(prefix+"-distance_km-max").value);
+        if(!Number.isFinite(max)||max<1||max>1000) throw new Error("Укажите расстояние от 1 до 1000 км.");
+        value={max};
+      }else if(key==="religion"||key==="nationality"){
+        const textValue=pick(prefix+"-"+key+"-text").value.trim();
+        if(!textValue) throw new Error("Заполните «"+(key==="religion"?"Религия":"Национальность")+"» или выберите «Не важно».");
+        value=[textValue];
+      }else{
+        const el=pick(prefix+"-"+key);
+        const selected=el?.value||"";
+        if(!selected) throw new Error("Выберите значение критерия или укажите «Не важно».");
+        value=[selected];
+      }
+      out[key]={importance,value};
+    }
+    return out;
+  }
+
   async function renderOnboarding(force=false) {
     clearPoller();
     if(force||!state.onboarding) await loadMe();
+    trackClient("ONBOARDING_STARTED");
     const step=firstIncompleteStep();
     const p=state.onboarding?.profile||state.profile?.profile||{};
 
@@ -1085,55 +1202,51 @@
 
     let body="";
     if(step==="basic"){
-      body='<div class="onboarding-card"><div class="eyebrow">Начнём с главного</div><h1>Расскажите немного о себе</h1><p class="muted">Это поможет не показывать вам случайных людей.</p>'+
+      const cityOther=p.market_code==="KZ-OTHER";
+      body='<div class="onboarding-card"><div class="eyebrow">Начнём с главного</div><h1>Расскажите немного о себе</h1><p class="muted">Ничего не выбираем за вас — каждое обязательное поле нужно заполнить самостоятельно.</p>'+
         '<div class="form-stack">'+
         '<label class="field-label">Имя<input class="input" id="ob-name" value="'+esc(p.display_name||"")+'" placeholder="Как к вам обращаться"></label>'+
         '<label class="field-label">Дата рождения<input class="input" id="ob-dob" type="date" value="'+esc(p.dob||"")+'"></label>'+
         '<div class="form-grid">'+
           '<label class="field-label">Ваш пол'+selectHtml("ob-gender",p.gender,[["M","Мужчина"],["F","Женщина"],["OTHER","Другое"]])+'</label>'+
-          '<label class="field-label">Кого ищете'+selectHtml("ob-seek",p.seek_gender,[["F","Женщину"],["M","Мужчину"],["ANY","Не важно"],["OTHER","Другое"]])+'</label>'+
+          '<label class="field-label">Кого вы рассматриваете'+selectHtml("ob-seek",p.seek_gender,[["F","Женщин"],["M","Мужчин"],["OTHER","Другой вариант"],["ANY","Пол не важен"]])+'</label>'+
+          '<label class="field-label">В каком городе вы сейчас живёте?'+selectHtml("ob-market",p.market_code,MARKET_OPTIONS,"Выберите город")+'</label>'+
+          '<label class="field-label" id="ob-city-other-wrap" '+(cityOther?"":"hidden")+'>Ваш город<input class="input" id="ob-city-other" maxlength="120" value="'+esc(cityOther?(p.city||""):"")+'" placeholder="Введите город"></label>'+
         '</div>'+
         '<button class="primary full" id="ob-save-basic">Продолжить →</button></div></div>';
     } else if(step==="relationship"){
-      body='<div class="onboarding-card"><div class="eyebrow">Статус</div><h1>Вы сейчас в отношениях?</h1><p class="muted">MatchLab показывает анкеты только тем, кто действительно открыт к знакомству.</p>'+
+      body='<div class="onboarding-card"><div class="eyebrow">Статус</div><h1>Вы сейчас в отношениях?</h1><p class="muted">Выберите ответ сами — MatchLab не подставляет его автоматически.</p>'+
         '<div class="choice-grid" id="relationship-choice">'+
           '<button class="choice-card" data-rel="no"><b>Нет</b><span>Я свободен(на)</span></button>'+
           '<button class="choice-card" data-rel="yes"><b>Да</b><span>Сейчас я в отношениях</span></button>'+
         '</div>'+
         '<div id="openness-block" class="form-stack" hidden><div class="field-label">Насколько вы открыты к знакомствам?</div>'+
-          selectHtml("ob-openness","ACTIVE",[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Пока не уверен(а)"],["NO","Не хочу знакомств"]])+
-          '<button class="primary full" id="ob-save-relationship">Продолжить →</button></div></div>';
+          selectHtml("ob-openness","",[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Пока не уверен(а)"],["NO","Не хочу знакомств"]])+
+          '<button class="primary full" id="ob-save-relationship" disabled>Продолжить →</button></div></div>';
     } else if(step==="readiness"){
-      body='<div class="onboarding-card"><div class="eyebrow">Готовность</div><h1>Как вам комфортнее начинать знакомство?</h1><p class="muted">Это не влияет на «оценку» — только помогает подобрать людей с похожим темпом.</p>'+
+      body='<div class="onboarding-card"><div class="eyebrow">Готовность</div><h1>Как вам комфортнее начинать знакомство?</h1><p class="muted">Оба ответа обязательны и начинаются без выбранного варианта.</p>'+
         '<div class="form-stack">'+
         '<label class="field-label">Готовность общаться в чате'+selectHtml("ob-chat",p.readiness_chat,[["YES","Да, готов(а)"],["RATHER_YES","Скорее да"],["LOOK_ONLY","Пока хочу присмотреться"]])+'</label>'+
         '<label class="field-label">Готовность встретиться офлайн'+selectHtml("ob-offline",p.readiness_offline,[["YES","Да"],["MAYBE","Возможно, после общения"],["NO","Пока нет"]])+'</label>'+
         '<button class="primary full" id="ob-save-readiness">Продолжить →</button></div></div>';
     } else if(step==="details"){
-      body='<div class="onboarding-card wide"><div class="eyebrow">О вас</div><h1>Что важно знать для совместимости?</h1><p class="muted">Только то, что реально помогает подобрать человека.</p>'+
+      body='<div class="onboarding-card wide"><div class="eyebrow">О вас</div><h1>Что важно знать для совместимости?</h1><p class="muted">Обязательные варианты не заполнены заранее.</p>'+
         '<div class="form-grid">'+
-          '<label class="field-label">Рост, см<input class="input" id="ob-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'"></label>'+
+          '<label class="field-label">Рост, см<input class="input" id="ob-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'" placeholder="Например, 175"></label>'+
           '<label class="field-label">Цель знакомства'+selectHtml("ob-goal",p.dating_goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])+'</label>'+
           '<label class="field-label">Дети'+selectHtml("ob-children",p.children_status,[["NO_CHILDREN","Нет детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
           '<label class="field-label">Планы на детей'+selectHtml("ob-children-plans",p.children_plans,[["WANTS","Хочу"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочу"]])+'</label>'+
           '<label class="field-label">Курение'+selectHtml("ob-smoking",p.smoking,[["NO","Не курю"],["RARE","Иногда"],["YES","Курю"]])+'</label>'+
           '<label class="field-label">Алкоголь'+selectHtml("ob-alcohol",p.alcohol,[["NO","Не употребляю"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
           '<label class="field-label">Образ жизни'+selectHtml("ob-lifestyle",p.lifestyle,[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
-          '<label class="field-label">Религия — необязательно<input class="input" id="ob-religion" value="'+esc(p.religion||"")+'" placeholder="Например, ислам"></label>'+
+          '<label class="field-label">Религия — необязательно<input class="input" id="ob-religion" value="'+esc(p.religion||"")+'" placeholder="Можно не указывать"></label>'+
         '</div>'+
         '<label class="field-label">Коротко о себе<textarea class="input textarea" id="ob-bio" maxlength="2000" placeholder="Чем вы живёте, что любите, какой человек вам близок">'+esc(p.bio||"")+'</textarea></label>'+
         '<button class="primary full" id="ob-save-details">Перейти к анкете →</button></div>';
     } else if(step==="partner_preferences"){
-      const seek=p.seek_gender||"ANY";
-      body='<div class="onboarding-card wide"><div class="eyebrow">Ваш человек</div><h1>Кого вы хотите встретить?</h1><p class="muted">Не делаем бесконечный фильтр. Только критерии, которые действительно важны.</p>'+
-        '<div class="form-grid">'+
-          '<label class="field-label">Возраст от<input class="input" id="pref-age-min" type="number" min="18" max="100" value="23"></label>'+
-          '<label class="field-label">Возраст до<input class="input" id="pref-age-max" type="number" min="18" max="100" value="38"></label>'+
-          '<label class="field-label">Расстояние, км<input class="input" id="pref-distance" type="number" min="1" max="1000" value="100"></label>'+
-          '<label class="field-label">Рост от<input class="input" id="pref-height-min" type="number" min="100" max="250" value="150"></label>'+
-          '<label class="field-label">Рост до<input class="input" id="pref-height-max" type="number" min="100" max="250" value="200"></label>'+
-          '<label class="field-label">Цель знакомства'+selectHtml("pref-goal","SERIOUS",[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["ANY","Любая"]])+'</label>'+
-        '</div>'+
+      const values=state.onboarding?.preferences||{};
+      body='<div class="onboarding-card wide preference-onboarding"><div class="eyebrow">Ваш человек</div><h1>Кого вы хотите встретить?</h1><p class="muted">Для каждого критерия сначала решите, насколько он важен. «Не важно» полностью исключает критерий из фильтра и процента предпочтений.</p>'+
+        preferenceEditorHtml("ob-pref",values,p)+
         '<button class="primary full" id="ob-save-preferences">Сохранить критерии →</button></div>';
     } else {
       const photos=state.onboarding?.photos||{};
@@ -1145,81 +1258,97 @@
     }
 
     root.innerHTML=onboardingChrome(step,body);
+    bindVerificationBanner();
     pick("onboarding-exit").onclick=()=>setRoute("home");
 
     if(step==="basic"){
+      const market=pick("ob-market"),otherWrap=pick("ob-city-other-wrap");
+      market.onchange=()=>{otherWrap.hidden=market.value!=="KZ-OTHER"};
       pick("ob-save-basic").onclick=async()=>{
+        if(!requireFields(["ob-name","ob-dob","ob-gender","ob-seek","ob-market"]))return;
+        if(market.value==="KZ-OTHER"&&!pick("ob-city-other").value.trim())return onboardingStatus("Введите ваш город.",true);
         try{
           onboardingStatus("Сохраняем…");
-          await post("/api/v1/profile/basic",{display_name:pick("ob-name").value.trim(),dob:pick("ob-dob").value,gender:pick("ob-gender").value,seek_gender:pick("ob-seek").value,market_code:"KZ-ALA",preferred_locale:"ru-KZ"});
-          await loadMe(); renderOnboarding();
+          await post("/api/v1/profile/basic",{
+            display_name:pick("ob-name").value.trim(),
+            dob:pick("ob-dob").value,
+            gender:pick("ob-gender").value,
+            seek_gender:pick("ob-seek").value,
+            market_code:market.value,
+            city_text:market.value==="KZ-OTHER"?pick("ob-city-other").value.trim():"",
+            preferred_locale:"ru-KZ"
+          });
+          await loadMe();renderOnboarding();
         }catch(e){onboardingStatus("Проверьте данные: "+e.message,true)}
       };
     } else if(step==="relationship"){
-      let inRelationship=false;
+      let selectedRelationship=null;
       document.querySelectorAll("[data-rel]").forEach(btn=>btn.onclick=()=>{
-        inRelationship=btn.dataset.rel==="yes";
+        selectedRelationship=btn.dataset.rel==="yes";
         document.querySelectorAll("[data-rel]").forEach(x=>x.classList.toggle("selected",x===btn));
         pick("openness-block").hidden=false;
-        if(inRelationship) pick("ob-openness").value="NO";
+        if(selectedRelationship){
+          pick("ob-openness").value="";
+          pick("ob-openness").disabled=true;
+        }else{
+          pick("ob-openness").disabled=false;
+        }
+        pick("ob-save-relationship").disabled=false;
       });
       pick("ob-save-relationship").onclick=async()=>{
+        if(selectedRelationship===null)return onboardingStatus("Выберите, находитесь ли вы сейчас в отношениях.",true);
+        if(!selectedRelationship&&!pick("ob-openness").value)return onboardingStatus("Укажите, насколько вы открыты к знакомствам.",true);
         try{
-          await post("/api/v1/profile/relationship",{in_relationship:inRelationship,openness:pick("ob-openness").value});
-          await loadMe(); renderOnboarding();
+          await post("/api/v1/profile/relationship",{in_relationship:selectedRelationship,openness:selectedRelationship?"NO":pick("ob-openness").value});
+          await loadMe();renderOnboarding();
         }catch(e){onboardingStatus(e.message,true)}
       };
     } else if(step==="readiness"){
       pick("ob-save-readiness").onclick=async()=>{
+        if(!requireFields(["ob-chat","ob-offline"]))return;
         try{
           await post("/api/v1/profile/readiness",{chat:pick("ob-chat").value,offline:pick("ob-offline").value});
-          await loadMe(); renderOnboarding();
+          await loadMe();renderOnboarding();
         }catch(e){onboardingStatus(e.message,true)}
       };
     } else if(step==="details"){
       pick("ob-save-details").onclick=async()=>{
+        if(!requireFields(["ob-height","ob-goal","ob-children","ob-children-plans","ob-smoking","ob-alcohol","ob-lifestyle"]))return;
+        const height=Number(pick("ob-height").value);
+        if(!Number.isInteger(height)||height<100||height>250)return onboardingStatus("Укажите корректный рост от 100 до 250 см.",true);
         try{
-          await post("/api/v1/profile/details",{height:Number(pick("ob-height").value),dating_goal:pick("ob-goal").value,children_status:pick("ob-children").value,children_plans:pick("ob-children-plans").value,smoking:pick("ob-smoking").value,alcohol:pick("ob-alcohol").value,lifestyle:pick("ob-lifestyle").value,bio:pick("ob-bio").value.trim(),religion:pick("ob-religion").value.trim(),nationality:""});
-          await loadMe(); renderOnboarding();
+          await post("/api/v1/profile/details",{
+            height,dating_goal:pick("ob-goal").value,children_status:pick("ob-children").value,
+            children_plans:pick("ob-children-plans").value,smoking:pick("ob-smoking").value,
+            alcohol:pick("ob-alcohol").value,lifestyle:pick("ob-lifestyle").value,
+            bio:pick("ob-bio").value.trim(),religion:pick("ob-religion").value.trim(),nationality:""
+          });
+          await loadMe();renderOnboarding();
         }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
       };
     } else if(step==="partner_preferences"){
+      bindPreferenceImportance("ob-pref");
       pick("ob-save-preferences").onclick=async()=>{
-        const seek=(state.onboarding?.profile?.seek_gender||"ANY");
-        const gender=seek==="ANY"?["M","F","OTHER"]:[seek];
-        const goal=pick("pref-goal").value;
-        const prefs={
-          age:{importance:"HARD",value:{min:Number(pick("pref-age-min").value),max:Number(pick("pref-age-max").value)}},
-          gender:{importance:"HARD",value:gender},
-          market:{importance:"HARD",value:["KZ-ALA"]},
-          distance_km:{importance:"IMPORTANT",value:{max:Number(pick("pref-distance").value)}},
-          dating_goal:{importance:"IMPORTANT",value:goal==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goal]},
-          children_status:{importance:"IGNORE"},
-          children_plans:{importance:"IGNORE"},
-          smoking:{importance:"IGNORE"},
-          alcohol:{importance:"IGNORE"},
-          lifestyle:{importance:"IGNORE"},
-          height:{importance:"PREFERENCE",value:{min:Number(pick("pref-height-min").value),max:Number(pick("pref-height-max").value)}}
-        };
         try{
+          const prefs=collectPreferences("ob-pref");
           onboardingStatus("Сохраняем критерии…");
           await post("/api/v1/preferences",{preferences:prefs});
-          await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
+          await loadMe();renderOnboarding();
+        }catch(e){onboardingStatus(e.message||"Не удалось сохранить критерии.",true)}
       };
     } else {
       pick("ob-finish-later").onclick=()=>setRoute("home");
       pick("ob-photo").onchange=async(e)=>{
-        const file=e.target.files?.[0]; if(!file)return;
+        const file=e.target.files?.[0];if(!file)return;
         if(file.size>12*1024*1024)return onboardingStatus("Фото слишком большое. Максимум 12 МБ.",true);
         try{
           onboardingStatus("Загружаем фото…");
           const prep=await post("/api/v1/photos/prepare",{mime:file.type});
           const headers=prep.upload?.headers||{"Content-Type":file.type};
           const up=await fetch(prep.upload.url,{method:"PUT",headers,body:file});
-          if(!up.ok) throw new Error("upload_failed");
+          if(!up.ok)throw new Error("upload_failed");
           await post("/api/v1/photos/finalize",{ticket:prep.ticket});
-          await loadMe(); renderOnboarding();
+          await loadMe();renderOnboarding();
         }catch(err){onboardingStatus("Не удалось загрузить фото: "+err.message,true)}
       };
     }
