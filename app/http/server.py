@@ -1435,10 +1435,103 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {
                         "methods": sorted(methods),
+                        "email": (
+                            user.email
+                            if user
+                            and not user.email.endswith(
+                                ("@phone.matchlab.invalid", "@identity.matchlab.invalid")
+                            )
+                            else None
+                        ),
+                        "email_verified": bool(user and user.email_verified_at),
                         "phone": user.phone_e164 if user else None,
                         "phone_verified": bool(user and user.phone_verified_at),
+                        "contact_verified": bool(
+                            user and (user.email_verified_at or user.phone_verified_at)
+                        ),
                     },
                 )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/auth/email/verification/request":
+                user, token = request_email_verification_challenge(
+                    db,
+                    user_id=principal.user_id,
+                )
+                if token is None:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"ok": True, "email_verified": True, "delivery": None},
+                    )
+                    return
+                configured = email_verification_configured()
+                if configured:
+                    _send_verification_async(user.email, token)
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    {
+                        "ok": True,
+                        "email_verified": False,
+                        "delivery": "email" if configured else "email_not_configured",
+                        "message": (
+                            "Письмо отправлено."
+                            if configured
+                            else "Отправка email пока не настроена."
+                        ),
+                    },
+                )
+                return
+
+            if method == "GET" and path == f"{API_PREFIX}/markets":
+                rows = list(
+                    db.execute(
+                        select(Market)
+                        .where(Market.registration_open.is_(True))
+                        .order_by(Market.id)
+                    ).scalars()
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "markets": [
+                            {
+                                "code": row.code,
+                                "name": row.display_name,
+                                "matching_open": bool(row.matching_open),
+                            }
+                            for row in rows
+                        ]
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/analytics/event":
+                body = self._body()
+                event_type = str(body.get("event_type", "")).upper()
+                if event_type not in {
+                    EVENT_ONBOARDING_STARTED,
+                    EVENT_CANDIDATE_VIEWED,
+                }:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "unsupported_client_event")
+                metadata = body.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata["platform"] = str(metadata.get("platform", "web"))[:32]
+                if event_type == EVENT_ONBOARDING_STARTED:
+                    row = track_once(
+                        db,
+                        event_type=event_type,
+                        user_id=principal.user_id,
+                        metadata=metadata,
+                    )
+                else:
+                    row = track_event(
+                        db,
+                        event_type=event_type,
+                        user_id=principal.user_id,
+                        metadata=metadata,
+                    )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "event_id": row.id})
                 return
 
             if method == "POST" and path == f"{API_PREFIX}/auth/link/phone/request":
@@ -1624,6 +1717,21 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                             "children_plans": profile.children_plans,
                         },
                         "completion": profile_completion_state(profile),
+                        "account": {
+                            "email": (
+                                user.email
+                                if (user := db.get(User, principal.user_id))
+                                and not user.email.endswith(
+                                    ("@phone.matchlab.invalid", "@identity.matchlab.invalid")
+                                )
+                                else None
+                            ),
+                            "email_verified": bool(user and user.email_verified_at),
+                            "phone_verified": bool(user and user.phone_verified_at),
+                            "contact_verified": bool(
+                                user and (user.email_verified_at or user.phone_verified_at)
+                            ),
+                        },
                     },
                 )
                 return
@@ -1631,8 +1739,25 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             if method == "GET" and path == f"{API_PREFIX}/onboarding":
                 profile = db.get(Profile, principal.user_id)
                 completion = profile_completion_state(profile)
+                account_user = db.get(User, principal.user_id)
                 response: dict[str, Any] = {
                     "completion": completion,
+                    "account": {
+                        "email": (
+                            account_user.email
+                            if account_user
+                            and not account_user.email.endswith(
+                                ("@phone.matchlab.invalid", "@identity.matchlab.invalid")
+                            )
+                            else None
+                        ),
+                        "email_verified": bool(account_user and account_user.email_verified_at),
+                        "phone_verified": bool(account_user and account_user.phone_verified_at),
+                        "contact_verified": bool(
+                            account_user
+                            and (account_user.email_verified_at or account_user.phone_verified_at)
+                        ),
+                    },
                     "questionnaire": {
                         "progress": questionnaire_progress(
                             db,
@@ -1673,6 +1798,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "gender": profile.gender,
                         "seek_gender": profile.seek_gender,
                         "market_code": market.code if market else None,
+                        "city": profile.city,
                         "relationship_status": profile.relationship_status,
                         "eligibility_status": profile.eligibility_status,
                         "dating_goal": profile.dating_goal,
@@ -1716,6 +1842,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     seek_gender=str(body.get("seek_gender", "")),
                     market_code=str(body.get("market_code", "")),
                     preferred_locale=body.get("preferred_locale"),
+                    city_text=body.get("city_text"),
                 )
                 self._send_json(HTTPStatus.OK, {"ok": True, "user_id": row.user_id})
                 return
@@ -2161,6 +2288,16 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         candidates.append(item)
                     if len(candidates) >= limit:
                         break
+                for item in candidates:
+                    track_event(
+                        db,
+                        event_type=EVENT_CANDIDATE_VIEWED,
+                        user_id=principal.user_id,
+                        metadata={
+                            "candidate_user_id": int(item["user_id"]),
+                            "surface": "discovery",
+                        },
+                    )
                 self._send_json(
                     HTTPStatus.OK,
                     {
