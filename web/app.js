@@ -442,10 +442,12 @@
         '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div></div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
-        '<div class="actions">' +
+        '<div class="actions candidate-actions">' +
+          '<button class="ghost" data-candidate-skip="' + c.user_id + '">Пропустить</button>' +
           '<button class="secondary" data-candidate-detail="' + c.user_id + '">Подробнее</button>' +
           '<button class="primary" data-candidate-like="' + c.user_id + '">Хочу познакомиться</button>' +
         '</div>' +
+        '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Пожаловаться или заблокировать</button>' +
       '</div>' +
     '</article>';
   }
@@ -515,6 +517,31 @@
         }
       };
     });
+    document.querySelectorAll("[data-candidate-skip]").forEach(btn=>{
+      btn.onclick=async()=>{
+        const id=Number(btn.dataset.candidateSkip);
+        btn.disabled=true;
+        btn.textContent="Пропускаем…";
+        try{
+          await post("/api/v1/discovery/decision",{candidate_user_id:id,action:"SKIPPED"});
+          state.candidates=state.candidates.filter(x=>Number(x.user_id)!==id);
+          if(state.currentCandidate&&Number(state.currentCandidate.user_id)===id)state.currentCandidate=null;
+          if((location.hash||"").startsWith("#candidate"))setRoute("home");
+          else renderHome();
+        }catch(e){
+          btn.disabled=false;
+          btn.textContent="Пропустить";
+          alert("Не удалось пропустить профиль: "+e.message);
+        }
+      };
+    });
+    document.querySelectorAll("[data-candidate-safety]").forEach(btn=>{
+      btn.onclick=()=>{
+        const id=Number(btn.dataset.candidateSafety);
+        const candidate=state.candidates.find(x=>Number(x.user_id)===id)||state.currentCandidate||{};
+        showSafetyModal(id,candidate.display_name||"этого пользователя");
+      };
+    });
   }
 
   function renderCandidate() {
@@ -543,6 +570,59 @@
     '</main>' + nav("home");
     bindCommon(); bindCandidates();
     document.getElementById("back-home").onclick = () => setRoute("home");
+  }
+
+
+  function showSafetyModal(userId,name="пользователя"){
+    if(!userId)return;
+    document.querySelector(".modal-backdrop.safety-modal")?.remove();
+    const modal=document.createElement("div");
+    modal.className="modal-backdrop safety-modal";
+    modal.innerHTML='<div class="modal">'+
+      '<div class="eyebrow">Безопасность</div>'+
+      '<h2>Действия с '+esc(name)+'</h2>'+
+      '<p class="muted">Жалоба отправляется на модерацию. Блокировка сразу убирает человека из подбора и запрещает сообщения.</p>'+
+      '<label class="field-label">Причина жалобы<select class="input" id="safety-reason">'+
+        '<option value="SPAM">Спам</option><option value="HARASSMENT">Оскорбления / преследование</option>'+
+        '<option value="SCAM">Мошенничество</option><option value="FAKE_PROFILE">Фейковый профиль</option>'+
+        '<option value="SEXUAL_CONTENT">Нежелательный сексуальный контент</option><option value="VIOLENCE">Угрозы / насилие</option>'+
+        '<option value="UNDERAGE">Возможный несовершеннолетний</option><option value="PRIVACY">Нарушение приватности</option>'+
+        '<option value="OTHER">Другое</option></select></label>'+
+      '<button class="secondary full" id="safety-report">Отправить жалобу</button>'+
+      '<button class="danger-btn full" id="safety-block">Заблокировать пользователя</button>'+
+      '<button class="ghost full" id="safety-close">Отмена</button>'+
+      '<div id="safety-status" class="status" hidden></div>'+
+    '</div>';
+    document.body.appendChild(modal);
+    const msg=(text,error=false)=>{
+      const el=document.getElementById("safety-status");
+      if(!el)return;
+      el.hidden=false;el.className="status"+(error?" error":"");el.textContent=text;
+    };
+    document.getElementById("safety-close").onclick=()=>modal.remove();
+    modal.onclick=e=>{if(e.target===modal)modal.remove()};
+    document.getElementById("safety-report").onclick=async()=>{
+      const btn=document.getElementById("safety-report");
+      btn.disabled=true;
+      try{
+        await post("/api/v1/safety/report",{user_id:userId,reason:document.getElementById("safety-reason").value});
+        msg("Жалоба отправлена модераторам.");
+        btn.textContent="Жалоба отправлена ✓";
+      }catch(e){btn.disabled=false;msg("Не удалось отправить жалобу: "+e.message,true)}
+    };
+    document.getElementById("safety-block").onclick=async()=>{
+      if(!confirm("Заблокировать "+name+"? Человек исчезнет из подбора и не сможет писать вам."))return;
+      const btn=document.getElementById("safety-block");
+      btn.disabled=true;
+      try{
+        await post("/api/v1/safety/block",{user_id:userId});
+        state.candidates=state.candidates.filter(x=>Number(x.user_id)!==Number(userId));
+        modal.remove();
+        alert("Пользователь заблокирован.");
+        if((location.hash||"").startsWith("#chat"))setRoute("chats");
+        else setRoute("home");
+      }catch(e){btn.disabled=false;msg("Не удалось заблокировать: "+e.message,true)}
+    };
   }
 
   function showMutual(matchId, candidateId) {
@@ -632,13 +712,18 @@
         photo(p,"avatar small")+
         '<div class="chat-title"><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
         '<span>'+esc(conv.mutual_fit_score??conv.compatibility_score??"")+(conv.mutual_fit_score!=null||conv.compatibility_score!=null?"% совместимость":"")+'</span></div>'+
-        '<button class="icon-btn">⋯</button></header>'+
+        '<button class="icon-btn" id="chat-safety">⋯</button></header>'+
       '<div id="messages" class="messages"><div class="loader"></div></div>'+
     '</main>'+
     '<div class="composer"><textarea id="message-input" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message">➤</button></div>'+
     nav("chats");
     bindCommon();
     document.getElementById("chat-back").onclick=()=>setRoute("chats");
+    const safetyBtn=document.getElementById("chat-safety");
+    if(safetyBtn)safetyBtn.onclick=()=>{
+      const userId=Number(p.user_id||conv.other_user_id||0);
+      if(userId)showSafetyModal(userId,p.display_name||conv.other_display_name||"этого пользователя");
+    };
     document.getElementById("send-message").onclick=sendCurrentMessage;
     await loadMessages();
     state.poller=setInterval(loadMessages,5000);
@@ -698,7 +783,8 @@
 
   function firstIncompleteStep() {
     const c=state.onboarding?.completion||{};
-    return (ONBOARDING_STEPS.find(([key])=>!c[key])||["photos"])[0];
+    const item=ONBOARDING_STEPS.find(([key])=>!c[key]);
+    return item ? item[0] : null;
   }
 
   function onboardingChrome(step, body) {
@@ -730,6 +816,7 @@
     const step=firstIncompleteStep();
     const p=state.onboarding?.profile||state.profile?.profile||{};
 
+    if(!step) return renderWaitlistCompletion();
     if(step==="questionnaire") return renderQuestionnaireStep();
 
     let body="";
@@ -872,6 +959,35 @@
         }catch(err){onboardingStatus("Не удалось загрузить фото: "+err.message,true)}
       };
     }
+  }
+
+
+  async function renderWaitlistCompletion(){
+    clearPoller();
+    if(!state.onboarding) await loadMe();
+    const p=state.onboarding?.profile||state.profile?.profile||{};
+    let waitlist=state.onboarding?.waitlist||{};
+    try{waitlist=await api("/api/v1/waitlist/status");}catch{}
+    const ready=!!waitlist.ready;
+    const stateLabel=waitlist.state==="WAITLIST"?"Вы в листе ожидания":waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":"Профиль готов";
+    root.innerHTML='<main class="onboarding-page waitlist-page">'+
+      '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div><button class="ghost" id="waitlist-profile">Профиль</button></header>'+
+      '<section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
+        '<div class="waitlist-mark">'+(ready?"✓":"♡")+'</div>'+
+        '<div class="eyebrow">Анкета завершена</div>'+
+        '<h1>'+esc(stateLabel)+(p.display_name?" — "+esc(p.display_name):"")+'</h1>'+
+        '<p class="muted">'+esc(waitlist.message||"Ваш профиль сохранён. Мы сообщим, когда подбор станет доступен.")+'</p>'+
+        '<div class="waitlist-summary">'+
+          '<div><b>100%</b><span>анкета заполнена</span></div>'+
+          '<div><b>'+esc(p.market_code==="KZ-ALA"?"Алматы":p.market_code||"Алматы")+'</b><span>город запуска</span></div>'+
+          '<div><b>'+esc(ready?"Готов":"Проверяем")+'</b><span>статус профиля</span></div>'+
+        '</div>'+
+        '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
+        '<button class="secondary full" id="waitlist-edit">Изменить профиль</button>'+
+      '</div></section></main>';
+    document.getElementById("waitlist-home").onclick=()=>setRoute("home");
+    document.getElementById("waitlist-edit").onclick=()=>setRoute("profile");
+    document.getElementById("waitlist-profile").onclick=()=>setRoute("profile");
   }
 
   async function renderQuestionnaireStep(){
