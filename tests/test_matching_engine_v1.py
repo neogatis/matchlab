@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.matching import service as matching
 from app.matching.config import CATEGORY_SECTIONS
+from app.preferences import service as preferences
 from app.questionnaire import service as questionnaire
 from app.questionnaire.catalog_v7 import V7_QUESTIONS
 
@@ -242,6 +243,41 @@ class MatchingEngineTests(unittest.TestCase):
             lower=matching.evaluate_pair(db,a,b)
             self.assertTrue(lower["eligible"])
             self.assertLess(lower["mutual_preference_score"],good["mutual_preference_score"])
+
+    def test_any_soft_preference_is_neutral_and_not_scored(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M")
+            db.commit()
+            baseline=matching.mutual_preference_score(db,a,b)
+            self.assertEqual(baseline,50)
+
+            self.pref(db,a,"smoking","PREFERENCE",values=["ANY"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),baseline)
+
+    def test_ignore_preference_is_not_in_soft_denominator(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F",smoking="YES")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M",smoking="NO")
+            self.pref(db,a,"smoking","IGNORE",values=["NO"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),50)
+
+    def test_preference_service_normalizes_legacy_any_to_ignore(self):
+        with Session(self.engine) as db:
+            user_id=self.add_user(db,email="a@example.com")
+            db.commit()
+            row=preferences.set_preference(
+                db,
+                user_id=user_id,
+                key="smoking",
+                importance="PREFERENCE",
+                value=["ANY"],
+            )
+            db.commit()
+            self.assertEqual(row.importance,"IGNORE")
+            self.assertIsNone(row.values_json)
 
     def test_questionnaire_difference_changes_ranking(self):
         with Session(self.engine) as db:
