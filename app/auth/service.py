@@ -715,6 +715,7 @@ def verify_phone_registration_code(
         db,
         user=user,
         referral_code=referral_code,
+        attribution=attribution,
     )
     db.add(
         AuthIdentity(
