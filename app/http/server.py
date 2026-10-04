@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import threading
 import time
@@ -9,6 +10,7 @@ from datetime import date, datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -153,6 +155,9 @@ from app.security.http import (
 
 API_PREFIX = "/api/v1"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WEB_ROOT = PROJECT_ROOT / "web"
+WEB_HERO = PROJECT_ROOT / "android" / "app" / "src" / "main" / "res" / "drawable-nodpi" / "matchlab_hero_couple.jpg"
 
 
 def _json_default(value: Any) -> Any:
@@ -491,6 +496,81 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(raw)
 
+    def _send_file(
+        self,
+        status: int,
+        file_path: Path,
+        *,
+        content_type: str | None = None,
+        cache_control: str = "public, max-age=3600",
+    ) -> None:
+        if not file_path.is_file():
+            raise ApiError(HTTPStatus.NOT_FOUND, "not_found")
+        raw = file_path.read_bytes()
+        resolved_type = (
+            content_type
+            or mimetypes.guess_type(file_path.name)[0]
+            or "application/octet-stream"
+        )
+        if resolved_type.startswith("text/") or resolved_type in {
+            "application/javascript",
+            "application/json",
+            "application/manifest+json",
+            "image/svg+xml",
+        }:
+            resolved_type += "; charset=utf-8"
+        self.send_response(status)
+        self.send_header("Content-Type", resolved_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _serve_web(self, path: str) -> bool:
+        if self.command not in {"GET", "HEAD"}:
+            return False
+        if path in {"/", "/app"}:
+            self._send_file(
+                HTTPStatus.OK,
+                WEB_ROOT / "index.html",
+                content_type="text/html",
+                cache_control="no-cache",
+            )
+            return True
+        if path == "/web/hero.jpg":
+            self._send_file(
+                HTTPStatus.OK,
+                WEB_HERO,
+                content_type="image/jpeg",
+                cache_control="public, max-age=86400",
+            )
+            return True
+        if not path.startswith("/web/"):
+            return False
+        relative = path[len("/web/"):]
+        if not relative or ".." in relative.split("/"):
+            raise ApiError(HTTPStatus.NOT_FOUND, "not_found")
+        target = (WEB_ROOT / relative).resolve()
+        if WEB_ROOT.resolve() not in target.parents:
+            raise ApiError(HTTPStatus.NOT_FOUND, "not_found")
+        cache = "no-cache" if target.name in {"index.html", "sw.js"} else "public, max-age=3600"
+        content_type = (
+            "application/manifest+json"
+            if target.suffix == ".webmanifest"
+            else None
+        )
+        self._send_file(
+            HTTPStatus.OK,
+            target,
+            content_type=content_type,
+            cache_control=cache,
+        )
+        return True
+
     def _origin_guard(self) -> None:
         allowed = _allowed_origins()
         if not allowed:
@@ -532,6 +612,10 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         if method == "OPTIONS":
             self._send_json(HTTPStatus.NO_CONTENT, {})
             return
+
+        if self._serve_web(path):
+            return
+
 
         if method == "GET" and path == "/health":
             with runtime().db() as db:
