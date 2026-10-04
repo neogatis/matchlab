@@ -557,7 +557,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         target = (WEB_ROOT / relative).resolve()
         if WEB_ROOT.resolve() not in target.parents:
             raise ApiError(HTTPStatus.NOT_FOUND, "not_found")
-        cache = "no-cache" if target.name in {"index.html", "sw.js"} else "public, max-age=3600"
+        cache = "no-cache" if target.name in {"index.html", "sw.js"} or target.suffix in {".css", ".js"} else "public, max-age=3600"
         content_type = (
             "application/manifest+json"
             if target.suffix == ".webmanifest"
