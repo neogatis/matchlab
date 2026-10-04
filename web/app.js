@@ -133,7 +133,7 @@
             '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
           '</section>' +
         '</div>' +
-        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
+        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
       '</div>' +
     '</main>';
     document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
@@ -150,6 +150,7 @@
       '<input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username">' +
       '<input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password">' +
       '<button class="primary full" id="password-login-btn">Войти →</button>' +
+      '<button class="ghost full auth-link-btn" id="forgot-password-btn" type="button">Забыли пароль?</button>' +
     '</div>' +
     '<div id="login-sms" class="form-stack" hidden>' +
       '<input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel">' +
@@ -169,6 +170,7 @@
         document.getElementById("login-sms").hidden = method !== "sms";
       };
     });
+    document.getElementById("forgot-password-btn").onclick = () => setRoute("reset-password");
     document.getElementById("password-login-btn").onclick = async () => {
       const identifier = document.getElementById("login-identifier").value.trim();
       const password = document.getElementById("login-password-value").value;
@@ -205,6 +207,108 @@
     };
   }
 
+
+  function renderPasswordReset() {
+    clearPoller();
+    const raw=(location.hash||"#reset-password").slice(1);
+    const query=new URLSearchParams(raw.includes("?")?raw.split("?").slice(1).join("?"):"");
+    const linkedEmail=query.get("email")||"";
+    const linkedToken=query.get("token")||"";
+    const hasLink=!!(linkedEmail&&linkedToken);
+
+    root.innerHTML='<main class="auth-screen"><div class="auth-wrap">'+
+      '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>'+
+      '<div class="auth-tagline"><div class="eyebrow">Безопасность аккаунта</div><h1>Верните доступ<br><span>к MatchLab.</span></h1><p>Сбросьте пароль по номеру телефона или email.</p></div>'+
+      '<div class="auth-panel"><section class="auth-card">'+
+        '<div class="eyebrow">Восстановление доступа</div><h2 style="font-family:Georgia,serif;font-size:30px;line-height:1.04;margin:7px 0 8px">'+
+          (hasLink?'Задайте новый пароль':'Как восстановить пароль?')+
+        '</h2>'+
+        (hasLink
+          ? '<div class="form-stack"><input class="input" value="'+esc(linkedEmail)+'" disabled>'+
+            '<input class="input" id="reset-linked-password" type="password" autocomplete="new-password" placeholder="Новый пароль — минимум 10 символов">'+
+            '<button class="primary full" id="reset-linked-confirm">Сохранить новый пароль →</button></div>'
+          : '<div class="tabs" id="reset-method-tabs"><button class="tab active" data-reset-method="phone">По номеру</button><button class="tab" data-reset-method="email">По email</button></div>'+
+            '<div id="reset-phone" class="form-stack">'+
+              '<input class="input" id="reset-phone-value" placeholder="+7 747 123 45 67" inputmode="tel">'+
+              '<button class="primary full" id="reset-phone-request">Получить SMS-код →</button>'+
+              '<input class="input" id="reset-phone-code" placeholder="6-значный код" inputmode="numeric" hidden>'+
+              '<input class="input" id="reset-phone-password" type="password" placeholder="Новый пароль — минимум 10 символов" hidden>'+
+              '<button class="primary full" id="reset-phone-confirm" hidden>Сменить пароль →</button>'+
+            '</div>'+
+            '<div id="reset-email" class="form-stack" hidden>'+
+              '<input class="input" id="reset-email-value" type="email" autocomplete="email" placeholder="Ваш email">'+
+              '<button class="primary full" id="reset-email-request">Отправить ссылку →</button>'+
+              '<p class="muted small">Если email зарегистрирован, вы получите ссылку для смены пароля.</p>'+
+            '</div>')+
+        '<div id="form-status" class="status" hidden style="margin-top:14px"></div>'+
+        '<button class="ghost full" id="reset-back-login" type="button">← Вернуться ко входу</button>'+
+      '</section></div>'+
+      '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0"><a href="/privacy" target="_blank" rel="noopener">Конфиденциальность</a> · <a href="/terms" target="_blank" rel="noopener">Условия</a></p>'+
+    '</div></main>';
+
+    document.getElementById("reset-back-login").onclick=()=>{location.hash="";renderAuth("login")};
+
+    if(hasLink){
+      document.getElementById("reset-linked-confirm").onclick=async()=>{
+        const password=document.getElementById("reset-linked-password").value;
+        if(password.length<10)return status("Пароль — минимум 10 символов.",true);
+        status("Сохраняем новый пароль…");
+        try{
+          await post("/api/v1/auth/password/reset/confirm",{email:linkedEmail,token:linkedToken,password});
+          await afterAuth();
+        }catch(e){status("Ссылка недействительна или истекла. Запросите новую.",true)}
+      };
+      return;
+    }
+
+    document.querySelectorAll("[data-reset-method]").forEach(btn=>btn.onclick=()=>{
+      const method=btn.dataset.resetMethod;
+      document.querySelectorAll("[data-reset-method]").forEach(x=>x.classList.toggle("active",x===btn));
+      document.getElementById("reset-phone").hidden=method!=="phone";
+      document.getElementById("reset-email").hidden=method!=="email";
+    });
+
+    document.getElementById("reset-phone-request").onclick=async()=>{
+      const phone=document.getElementById("reset-phone-value").value.trim();
+      if(!phone)return status("Введите номер телефона.",true);
+      status("Отправляем SMS…");
+      try{
+        await post("/api/v1/auth/phone/request",{phone});
+        document.getElementById("reset-phone-code").hidden=false;
+        document.getElementById("reset-phone-password").hidden=false;
+        document.getElementById("reset-phone-confirm").hidden=false;
+        status("Код отправлен. Введите код и новый пароль.");
+      }catch(e){status("Не удалось отправить код: "+e.message,true)}
+    };
+
+    document.getElementById("reset-phone-confirm").onclick=async()=>{
+      const phone=document.getElementById("reset-phone-value").value.trim();
+      const code=document.getElementById("reset-phone-code").value.trim();
+      const password=document.getElementById("reset-phone-password").value;
+      if(!code)return status("Введите SMS-код.",true);
+      if(password.length<10)return status("Пароль — минимум 10 символов.",true);
+      status("Меняем пароль…");
+      try{
+        await post("/api/v1/auth/phone/verify",{phone,code,password});
+        await afterAuth();
+      }catch(e){status("Код неверный или истёк.",true)}
+    };
+
+    document.getElementById("reset-email-request").onclick=async()=>{
+      const email=document.getElementById("reset-email-value").value.trim();
+      if(!email)return status("Введите email.",true);
+      status("Отправляем инструкцию…");
+      try{
+        const result=await post("/api/v1/auth/password/reset/request",{email});
+        if(result.delivery==="email_not_configured"){
+          status("Сброс по email временно не подключён. Используйте номер телефона.",true);
+        }else{
+          status("Если такой email зарегистрирован, ссылка уже отправлена.");
+        }
+      }catch(e){status("Не удалось отправить инструкцию: "+e.message,true)}
+    };
+  }
+
   function registerForm() {
     return '<div class="tabs">' +
       '<button class="tab active" data-register-method="phone">По номеру</button>' +
@@ -221,7 +325,8 @@
       '<input class="input" id="reg-email" type="email" placeholder="Email" autocomplete="email">' +
       '<input class="input" id="reg-email-password" type="password" placeholder="Придумайте пароль">' +
       '<button class="primary full" id="reg-email-finish">Зарегистрироваться →</button>' +
-    '</div>';
+    '</div>' +
+    '<label class="legal-check"><input type="checkbox" id="reg-legal"><span>Мне есть 18 лет, я принимаю <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>.</span></label>';
   }
 
   function bindRegister() {
@@ -234,6 +339,7 @@
       };
     });
     document.getElementById("reg-phone-request").onclick = async () => {
+      if(!document.getElementById("reg-legal").checked)return status("Подтвердите 18+ и принятие Условий и Политики конфиденциальности.",true);
       const phone = document.getElementById("reg-phone").value.trim();
       const password = document.getElementById("reg-phone-password").value;
       if (!phone) return status("Введите номер телефона.", true);
@@ -261,6 +367,7 @@
       } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
     };
     document.getElementById("reg-email-finish").onclick = async () => {
+      if(!document.getElementById("reg-legal").checked)return status("Подтвердите 18+ и принятие Условий и Политики конфиденциальности.",true);
       const email = document.getElementById("reg-email").value.trim();
       const password = document.getElementById("reg-email-password").value;
       if (!email) return status("Введите email.", true);
