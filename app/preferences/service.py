@@ -139,6 +139,19 @@ def set_preference(
         raise PreferenceError("Profile not found")
 
     importance = _validate_importance(importance)
+
+    # Backward-compatible normalization for old web clients that encoded
+    # "Не важно" as a real value such as ["ANY"]. IGNORE must mean that
+    # the criterion takes no part in filtering or scoring.
+    if (
+        importance != "IGNORE"
+        and isinstance(value, list)
+        and len(value) == 1
+        and str(value[0]).upper() == "ANY"
+    ):
+        importance = "IGNORE"
+        value = None
+
     normalized: dict[str, Any] = {}
     if importance != "IGNORE":
         normalized = _validate_payload(db, key, value)
