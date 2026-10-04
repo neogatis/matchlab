@@ -1355,32 +1355,71 @@
   }
 
 
+  async function renderEmailVerification(){
+    clearPoller();
+    const raw=location.hash.includes("?")?location.hash.split("?")[1]:"";
+    const params=new URLSearchParams(raw);
+    const email=params.get("email")||"";
+    const token=params.get("challenge")||params.get("token")||"";
+    root.innerHTML='<main class="onboarding-page verification-page"><section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
+      '<div class="waitlist-mark">✉</div><div class="eyebrow">Подтверждение email</div>'+
+      '<h1 id="verify-email-title">Проверяем ссылку…</h1>'+
+      '<p class="muted" id="verify-email-copy">Это займёт несколько секунд.</p>'+
+      '<button class="primary full" id="verify-email-continue" hidden>Продолжить →</button>'+
+    '</div></section></main>';
+    const title=pick("verify-email-title"),copy=pick("verify-email-copy"),btn=pick("verify-email-continue");
+    if(!email||!token){
+      title.textContent="Ссылка неполная";
+      copy.textContent="Запросите новое письмо подтверждения в профиле.";
+      btn.hidden=false;btn.textContent="Перейти к профилю";btn.onclick=()=>setRoute("profile");return;
+    }
+    try{
+      await post("/api/v1/auth/email/verify",{email,token});
+      title.textContent="Email подтверждён ✓";
+      copy.textContent="Теперь этот способ связи подтверждён, и профиль может участвовать в подборе после выполнения остальных условий.";
+      btn.hidden=false;btn.onclick=async()=>{await loadMe();setRoute("home")};
+    }catch(e){
+      title.textContent="Ссылка недействительна или истекла";
+      copy.textContent="Запросите новое письмо подтверждения. Старые и уже использованные ссылки не работают.";
+      btn.hidden=false;btn.textContent="Перейти к профилю";btn.onclick=()=>setRoute("profile");
+    }
+  }
+
   async function renderWaitlistCompletion(){
     clearPoller();
     if(!state.onboarding) await loadMe();
     const p=state.onboarding?.profile||state.profile?.profile||{};
     let waitlist=state.onboarding?.waitlist||{};
-    try{waitlist=await api("/api/v1/waitlist/status");}catch{}
+    try{waitlist=await api("/api/v1/waitlist/status")}catch{}
     const ready=!!waitlist.ready;
-    const stateLabel=waitlist.state==="WAITLIST"?"Вы в листе ожидания":waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":"Профиль готов";
+    const labels={
+      WAITLIST:"Вы в листе ожидания",
+      CITY_WAITLIST:"Ваш город в листе ожидания",
+      MATCHING_ACTIVE:"Подбор уже открыт",
+      CONTACT_VERIFICATION_REQUIRED:"Осталось подтвердить контакт",
+      READY:"Профиль готов",
+    };
+    const stateLabel=labels[waitlist.state]||"Профиль сохранён";
+    const city=waitlist.market_name||p.city||"Не указан";
     root.innerHTML='<main class="onboarding-page waitlist-page">'+
       '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div><button class="ghost" id="waitlist-profile">Профиль</button></header>'+
-      '<section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
+      '<section class="onboarding-shell">'+verificationBanner()+'<div class="onboarding-card waitlist-card">'+
         '<div class="waitlist-mark">'+(ready?"✓":"♡")+'</div>'+
         '<div class="eyebrow">Анкета завершена</div>'+
         '<h1>'+esc(stateLabel)+(p.display_name?" — "+esc(p.display_name):"")+'</h1>'+
         '<p class="muted">'+esc(waitlist.message||"Ваш профиль сохранён. Мы сообщим, когда подбор станет доступен.")+'</p>'+
         '<div class="waitlist-summary">'+
           '<div><b>100%</b><span>анкета заполнена</span></div>'+
-          '<div><b>'+esc(p.market_code==="KZ-ALA"?"Алматы":p.market_code||"Алматы")+'</b><span>город запуска</span></div>'+
-          '<div><b>'+esc(ready?"Готов":"Проверяем")+'</b><span>статус профиля</span></div>'+
+          '<div><b>'+esc(city)+'</b><span>ваш город</span></div>'+
+          '<div><b>'+esc(waitlist.contact_verified?"Контакт подтверждён":"Нужно подтверждение")+'</b><span>готовность к подбору</span></div>'+
         '</div>'+
         '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
         '<button class="secondary full" id="waitlist-edit">Изменить профиль</button>'+
       '</div></section></main>';
-    document.getElementById("waitlist-home").onclick=()=>setRoute("home");
-    document.getElementById("waitlist-edit").onclick=()=>setRoute("profile");
-    document.getElementById("waitlist-profile").onclick=()=>setRoute("profile");
+    bindVerificationBanner();
+    pick("waitlist-home").onclick=()=>setRoute("home");
+    pick("waitlist-edit").onclick=()=>setRoute("profile");
+    pick("waitlist-profile").onclick=()=>setRoute("profile");
   }
 
   async function renderQuestionnaireStep(){
@@ -1816,6 +1855,7 @@
     clearPoller();
     const route=(location.hash||"#home").slice(1).split("?")[0];
     if(route==="reset-password") return renderPasswordReset();
+    if(route==="verify-email") return renderEmailVerification();
     if(!state.authenticated){
       try{
         await api("/api/v1/auth/methods");
@@ -1844,6 +1884,8 @@
 
   window.addEventListener("hashchange",()=>renderRoute());
   window.addEventListener("load",async()=>{
+    captureAttribution();
+    trackAnonymous("LANDING_VIEW");
     if("serviceWorker" in navigator) navigator.serviceWorker.register("/web/sw.js").catch(()=>{});
     await renderRoute();
   });
