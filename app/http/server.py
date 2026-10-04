@@ -1503,7 +1503,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                             )
                             for item in ranked
                         ],
-                        "enabled": bool(ranked) or feature_flags(db).get("candidate_output", False),
+                        "enabled": feature_flags(db).get("candidate_output_enabled", False),
                     },
                 )
                 return
@@ -1562,15 +1562,24 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/chat/conversations":
+                conversations = list_conversations(
+                    db,
+                    user_id=principal.user_id,
+                    limit=50,
+                )
+                for item in conversations:
+                    other_id = int(item["other_user_id"])
+                    item["profile"] = _candidate_profile_payload(
+                        db,
+                        user_id=other_id,
+                    )
+                    match = db.get(Match, int(item["match_id"]))
+                    if match is not None:
+                        item["compatibility_score"] = match.compatibility_score
+                        item["mutual_fit_score"] = match.mutual_fit_score
                 self._send_json(
                     HTTPStatus.OK,
-                    {
-                        "conversations": list_conversations(
-                            db,
-                            user_id=principal.user_id,
-                            limit=50,
-                        )
-                    },
+                    {"conversations": conversations},
                 )
                 return
 
