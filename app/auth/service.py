@@ -14,7 +14,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from app.analytics.events import EVENT_REGISTRATION, track_once
+from app.analytics.events import (
+    EVENT_EMAIL_VERIFIED,
+    EVENT_PHONE_VERIFIED,
+    EVENT_REGISTRATION,
+    track_once,
+)
 from app.db.models import AuthChallenge, AuthIdentity, AuthRateLimit, MarketingAttribution, Session as DbSession, User
 
 
@@ -502,6 +507,13 @@ def verify_email_challenge(
     if user is None or user.email != normalized:
         raise InvalidOrExpiredChallenge("Invalid or expired challenge")
     user.email_verified_at = now
+    track_once(
+        db,
+        event_type=EVENT_EMAIL_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "email"},
+        now=now,
+    )
     db.flush()
     return user
 
@@ -527,6 +539,13 @@ def verify_phone_challenge(
         raise InvalidOrExpiredChallenge("Invalid or expired challenge")
     user.phone_e164 = phone_e164.strip()
     user.phone_verified_at = now
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     db.flush()
     return user
 
@@ -679,6 +698,13 @@ def verify_phone_registration_code(
         event_type=EVENT_REGISTRATION,
         user_id=user.id,
         metadata={"channel": "phone"},
+    )
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
     )
     db.flush()
     return user
@@ -852,6 +878,13 @@ def verify_phone_login_code(
         user.password_updated_at = now
         revoke_all_sessions(db, user.id, now=now)
 
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     db.flush()
     return user
 
