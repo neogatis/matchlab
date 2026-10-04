@@ -1,5 +1,5 @@
 const CACHE="matchlab-shell-v1";
-const SHELL=["/","/web/app.css","/web/app.js","/web/icon.svg"];
+const SHELL=["/","/web/app.css?v=4","/web/app.js?v=4","/web/icon.svg"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL))));
 self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch",e=>{
