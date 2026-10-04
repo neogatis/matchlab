@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analytics.events import EVENT_PROFILE_COMPLETED, track_once
+from app.analytics.events import EVENT_PROFILE_COMPLETED, EVENT_PROFILE_READY, track_once
 from app.db.models import Market, Profile, User, UserStatusHistory
 
 
@@ -417,11 +417,19 @@ def recompute_profile_completion(
     profile.profile_completed = complete
     profile.updated_at = now
     if complete:
+        metadata = {"completion_model": "profile-v1"}
         track_once(
             db,
             event_type=EVENT_PROFILE_COMPLETED,
             user_id=user_id,
-            metadata={"completion_model": "profile-v1"},
+            metadata=metadata,
+            now=now,
+        )
+        track_once(
+            db,
+            event_type=EVENT_PROFILE_READY,
+            user_id=user_id,
+            metadata=metadata,
             now=now,
         )
     db.flush()
