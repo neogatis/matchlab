@@ -105,27 +105,35 @@
   function renderAuth(mode="login") {
     clearPoller();
     const register = mode === "register";
-    root.innerHTML = '<main class="auth-wrap">' +
-      '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
-      '<div class="auth-hero"><img src="/web/hero.jpg" alt="Счастливая пара"></div>' +
-      '<div class="tabs">' +
-        '<button class="tab ' + (!register?"active":"") + '" id="auth-login-tab">Вход</button>' +
-        '<button class="tab ' + (register?"active":"") + '" id="auth-register-tab">Регистрация</button>' +
+    root.innerHTML = '<main class="auth-screen">' +
+      '<div class="auth-wrap">' +
+        '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
+        '<div class="auth-tagline">' +
+          '<div class="eyebrow">Знакомства по совместимости</div>' +
+          '<h1>Не выбирай из всех.<br>Найди подходящего.</h1>' +
+          '<p>Общие ценности, реальные люди и серьёзные намерения.</p>' +
+        '</div>' +
+        '<div class="auth-panel">' +
+          '<div class="tabs auth-switch">' +
+            '<button class="tab ' + (!register?"active":"") + '" id="auth-login-tab">Вход</button>' +
+            '<button class="tab ' + (register?"active":"") + '" id="auth-register-tab">Регистрация</button>' +
+          '</div>' +
+          '<section class="auth-card">' +
+            '<div class="eyebrow">' + (register?"Новый профиль":"С возвращением") + '</div>' +
+            '<h2 style="font-family:Georgia,serif;font-size:30px;line-height:1.04;margin:7px 0 8px">' +
+              (register?"Создайте аккаунт":"Войдите в MatchLab") +
+            '</h2>' +
+            '<p class="muted" style="margin:0 0 18px">' +
+              (register
+                ?"Регистрация займёт пару минут. Затем начнём анкету совместимости."
+                :"По SMS-коду или телефону/email и паролю.") +
+            '</p>' +
+            (register ? registerForm() : loginForm()) +
+            '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
+          '</section>' +
+        '</div>' +
+        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
       '</div>' +
-      '<section class="card">' +
-        '<div class="eyebrow">' + (register?"Новый профиль":"С возвращением") + '</div>' +
-        '<h2 style="font-family:Georgia,serif;font-size:30px;margin:7px 0 8px">' +
-          (register?"Создайте аккаунт":"Войдите в MatchLab") +
-        '</h2>' +
-        '<p class="muted" style="margin:0 0 18px">' +
-          (register
-            ?"После регистрации начнём анкету совместимости."
-            :"По SMS-коду или телефону/email и паролю.") +
-        '</p>' +
-        (register ? registerForm() : loginForm()) +
-        '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
-      '</section>' +
-      '<p class="muted" style="font-size:12px;text-align:center;margin:18px 18px 0">18+. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
     '</main>';
     document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
     document.getElementById("auth-register-tab").onclick = () => renderAuth("register");
