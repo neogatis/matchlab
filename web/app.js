@@ -898,92 +898,160 @@
     });
   }
 
+  function chatTime(value){
+    if(!value)return "";
+    const d=new Date(value);
+    if(Number.isNaN(d.getTime()))return "";
+    const now=new Date();
+    const same=now.toDateString()===d.toDateString();
+    return same
+      ? d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})
+      : d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});
+  }
+
   async function renderChats() {
-    clearPoller(); loading("chats");
-    try { state.conversations=(await api("/api/v1/chat/conversations")).conversations||[]; }
-    catch { state.conversations=[]; }
-    root.innerHTML='<main class="page">'+topbar("Сообщения")+
-      '<div class="section-head"><div><div class="eyebrow">Общение</div><h2>Ваши чаты</h2></div></div>'+
+    clearPoller();loading("chats");
+    try{state.conversations=(await api("/api/v1/chat/conversations")).conversations||[]}catch{state.conversations=[]}
+    root.innerHTML='<main class="page chats-page">'+topbar("Сообщения")+
+      '<div class="section-head chat-section-head"><div><div class="eyebrow">Взаимный интерес</div><h2>Диалоги</h2><p class="muted">Здесь только люди, с которыми интерес совпал.</p></div></div>'+
       (state.conversations.length
-        ? '<div class="grid">'+state.conversations.map(c=>{
-          const p=c.profile||{};
-          const last=c.last_message;
-          return '<button class="card match-card" style="text-align:left;width:100%;border:1px solid var(--border)" data-open-chat="'+c.conversation_id+'">'+
-            photo(p)+'<div class="match-main"><h3>'+esc(c.other_display_name||p.display_name||"Профиль")+'</h3>'+
-            '<div class="muted line-clamp">'+esc(last?.body||"Начните общение")+'</div></div>'+
-            (c.unread_count?'<span class="badge">'+esc(c.unread_count)+'</span>':'')+
-          '</button>';
-        }).join("")+'</div>'
-        : '<section class="card empty"><div class="emoji">◌</div><h3>Пока нет диалогов</h3><p class="muted">После взаимного интереса здесь появится ваш чат.</p><button class="primary" data-route="matches">Совпадения</button></section>')+
+        ? '<section class="chat-list">'+state.conversations.map(conv=>{
+            const p=conv.profile||{},last=conv.last_message;
+            const score=conv.mutual_fit_score??conv.compatibility_score;
+            return '<button class="chat-list-item" data-open-chat="'+conv.conversation_id+'">'+
+              '<div class="chat-list-avatar">'+photo(p,"chat-avatar")+(conv.unread_count?'<i class="chat-unread-dot"></i>':'')+'</div>'+
+              '<div class="chat-list-copy"><div class="chat-list-name"><b>'+esc(conv.other_display_name||p.display_name||"Профиль")+'</b>'+
+                (score!=null?'<span>💜 '+esc(score)+'%</span>':'')+'</div>'+
+                '<div class="chat-list-preview '+(conv.unread_count?"unread":"")+'">'+esc(last?.body||"Можно начать разговор")+'</div></div>'+
+              '<div class="chat-list-meta"><time>'+esc(chatTime(last?.created_at))+'</time>'+(conv.unread_count?'<b>'+esc(conv.unread_count)+'</b>':'')+'</div>'+
+            '</button>';
+          }).join("")+'</section>'
+        : '<section class="card empty"><div class="emoji">◌</div><h3>Пока нет диалогов</h3><p class="muted">После взаимного интереса здесь появится чат.</p><button class="primary" data-route="matches">Совпадения</button></section>')+
     '</main>'+nav("chats");
     bindCommon();
     document.querySelectorAll("[data-open-chat]").forEach(btn=>btn.onclick=()=>{
       const id=Number(btn.dataset.openChat);
       state.currentConversation=state.conversations.find(x=>Number(x.conversation_id)===id);
+      state.currentMessages=[];
+      state.messageFingerprint="";
       setRoute("chat");
     });
+  }
+
+  function messageHtml(m){
+    const pending=m.pending?" pending":"";
+    const failed=m.failed?" failed":"";
+    const status=m.pending?"Отправляется…":m.failed?"Не отправлено":chatTime(m.created_at);
+    return '<div class="message-row '+(m.is_mine?"mine":"theirs")+'" '+(m.client_local_id?'data-local-message="'+esc(m.client_local_id)+'"':'')+'>'+
+      '<div class="bubble'+pending+failed+'"><div class="bubble-body">'+esc(m.body)+'</div>'+
+      '<div class="bubble-meta">'+(m.is_mine&&!m.failed?'<span class="message-check">'+(m.pending?"○":"✓")+'</span>':'')+
+      '<span>'+esc(status)+'</span></div></div></div>';
+  }
+
+  function renderMessageList(items,{forceBottom=false}={}){
+    const box=pick("messages");if(!box)return;
+    const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
+    box.innerHTML=items.length
+      ? items.map(messageHtml).join("")
+      : '<div class="chat-empty-state"><div>♡</div><h3>Начните разговор</h3><p>Можно оттолкнуться от общего интереса или просто написать по-человечески.</p></div>';
+    if(forceBottom||nearBottom) requestAnimationFrame(()=>{box.scrollTop=box.scrollHeight});
   }
 
   async function renderChat() {
     clearPoller();
     const conv=state.currentConversation;
-    if(!conv) return setRoute("chats");
+    if(!conv)return setRoute("chats");
     const p=conv.profile||{};
-    root.innerHTML='<main class="page chat-shell" style="padding-bottom:150px">'+
-      '<header class="chat-head"><button class="icon-btn" id="chat-back">←</button>'+
-        photo(p,"avatar small")+
-        '<div class="chat-title"><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
-        '<span>'+esc(conv.mutual_fit_score??conv.compatibility_score??"")+(conv.mutual_fit_score!=null||conv.compatibility_score!=null?"% совместимость":"")+'</span></div>'+
+    const score=conv.mutual_fit_score??conv.compatibility_score;
+    state.currentMessages=state.currentMessages||[];
+    state.sendingCount=0;
+    root.innerHTML='<main class="chat-page">'+
+      '<header class="chat-head-modern"><button class="icon-btn" id="chat-back">←</button>'+
+        '<div class="chat-head-person">'+photo(p,"chat-head-avatar")+
+          '<div><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
+          '<span>'+(score!=null?'💜 '+esc(score)+'% совместимость по анкете':'Взаимный интерес')+'</span></div></div>'+
         '<button class="icon-btn" id="chat-safety">⋯</button></header>'+
-      '<div id="messages" class="messages"><div class="loader"></div></div>'+
-    '</main>'+
-    '<div class="composer"><textarea id="message-input" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message">➤</button></div>'+
-    nav("chats");
+      '<div class="conversation-assist"><span>✨</span><div><b>Есть с чего начать</b><small>Спросите о том, что действительно зацепило вас в профиле. MatchLab не пишет сообщения вместо вас.</small></div></div>'+
+      '<section id="messages" class="messages-modern"><div class="loader"></div></section>'+
+      '<div class="chat-composer-wrap"><div class="chat-composer">'+
+        '<textarea id="message-input" rows="1" maxlength="4000" placeholder="Сообщение…"></textarea>'+
+        '<button class="chat-send" id="send-message" aria-label="Отправить">➤</button>'+
+      '</div><div class="composer-hint">Enter — отправить · Shift+Enter — новая строка</div></div>'+
+    '</main>'+nav("chats");
     bindCommon();
-    document.getElementById("chat-back").onclick=()=>setRoute("chats");
-    const safetyBtn=document.getElementById("chat-safety");
+    pick("chat-back").onclick=()=>setRoute("chats");
+    const safetyBtn=pick("chat-safety");
     if(safetyBtn)safetyBtn.onclick=()=>{
       const userId=Number(p.user_id||conv.other_user_id||0);
       if(userId)showSafetyModal(userId,p.display_name||conv.other_display_name||"этого пользователя");
     };
-    document.getElementById("send-message").onclick=sendCurrentMessage;
-    await loadMessages();
-    state.poller=setInterval(loadMessages,5000);
+    const input=pick("message-input");
+    const resize=()=>{input.style.height="auto";input.style.height=Math.min(input.scrollHeight,132)+"px"};
+    input.addEventListener("input",resize);
+    input.addEventListener("keydown",e=>{
+      if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendCurrentMessage()}
+    });
+    pick("send-message").onclick=sendCurrentMessage;
+    await loadMessages(true);
+    state.poller=setInterval(()=>loadMessages(false),3000);
   }
 
-  async function loadMessages() {
+  async function loadMessages(force=false) {
     const conv=state.currentConversation;
-    if(!conv) return;
+    if(!conv||(!force&&state.sendingCount>0))return;
     try{
       const data=await api("/api/v1/chat/messages?conversation_id="+conv.conversation_id+"&limit=100");
       const items=data.messages||[];
-      const box=document.getElementById("messages");
-      if(!box) return;
-      box.innerHTML=items.length ? items.map(m=>
-        '<div class="bubble '+(m.is_mine?"mine":"theirs")+'">'+esc(m.body)+
-        '<span class="bubble-time">'+esc((m.created_at||"").slice(11,16))+'</span></div>'
-      ).join("") : '<div class="empty"><div class="emoji">♡</div><h3>Начните разговор</h3><p class="muted">Напишите первое сообщение — без шаблонов, просто по-человечески.</p></div>';
+      const fingerprint=items.map(m=>m.id+":"+(m.read_at||"")).join("|");
+      if(force||fingerprint!==state.messageFingerprint){
+        state.currentMessages=items;
+        state.messageFingerprint=fingerprint;
+        renderMessageList(items,{forceBottom:force});
+      }
       if(items.length){
         const last=items[items.length-1];
-        await post("/api/v1/chat/read",{conversation_id:conv.conversation_id,through_message_id:last.id}).catch(()=>{});
+        if(!last.is_mine&&!last.read_at){
+          post("/api/v1/chat/read",{conversation_id:conv.conversation_id,through_message_id:last.id}).catch(()=>{});
+        }
       }
-      box.scrollTop=box.scrollHeight;
     }catch(e){}
   }
 
   async function sendCurrentMessage(){
-    const input=document.getElementById("message-input");
-    const text=input.value.trim();
-    if(!text||!state.currentConversation) return;
-    input.value="";
+    const input=pick("message-input");
+    const text=input?.value.trim();
+    const conv=state.currentConversation;
+    if(!text||!conv)return;
+    const clientId=crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random();
+    input.value="";input.style.height="auto";
+    const optimistic={
+      body:text,is_mine:true,pending:true,failed:false,
+      client_local_id:clientId,created_at:new Date().toISOString()
+    };
+    state.currentMessages=[...(state.currentMessages||[]),optimistic];
+    renderMessageList(state.currentMessages,{forceBottom:true});
+    state.sendingCount=(state.sendingCount||0)+1;
     try{
-      await post("/api/v1/chat/messages",{
-        conversation_id:state.currentConversation.conversation_id,
+      const result=await post("/api/v1/chat/messages",{
+        conversation_id:conv.conversation_id,
         body:text,
-        client_message_id:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random())
+        client_message_id:clientId
       });
-      await loadMessages();
-    }catch(e){alert("Не удалось отправить: "+e.message)}
+      const saved=result.message||{};
+      state.currentMessages=(state.currentMessages||[]).map(m=>
+        m.client_local_id===clientId?{...saved,is_mine:true}:m
+      );
+      renderMessageList(state.currentMessages,{forceBottom:true});
+      loadMessages(true);
+    }catch(e){
+      state.currentMessages=(state.currentMessages||[]).map(m=>
+        m.client_local_id===clientId?{...m,pending:false,failed:true}:m
+      );
+      renderMessageList(state.currentMessages,{forceBottom:true});
+    }finally{
+      state.sendingCount=Math.max(0,(state.sendingCount||1)-1);
+      input?.focus();
+    }
   }
 
 
