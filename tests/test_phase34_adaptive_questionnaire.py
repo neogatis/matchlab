@@ -148,6 +148,41 @@ class Phase34AdaptiveQuestionnaireTests(unittest.TestCase):
             self.assertGreaterEqual(adaptive_answers, 12)
             self.assertLessEqual(adaptive_answers, adaptive.MAX_ADAPTIVE_ANSWERS)
 
+    def test_adaptive_questions_are_generated_one_at_a_time(self):
+        with Session(self.engine) as db:
+            state = adaptive.state(db, user_id=self.user_id)
+
+            while state["phase"] == "BASE":
+                state = adaptive.answer(
+                    db,
+                    user_id=self.user_id,
+                    question_token=state["question"]["token"],
+                    value=4,
+                )
+
+            self.assertEqual(state["phase"], "ADAPTIVE")
+            self.assertEqual(state.get("prefetch"), [])
+            pending = adaptive._unanswered_generated(db, self.user_id)
+            self.assertEqual(len(pending), 1)
+            first_id = pending[0].id
+
+            state = adaptive.answer(
+                db,
+                user_id=self.user_id,
+                question_token=state["question"]["token"],
+                value=5,
+            )
+            self.assertEqual(state["phase"], "ADAPTIVE")
+            self.assertEqual(state.get("prefetch"), [])
+            pending = adaptive._unanswered_generated(db, self.user_id)
+            self.assertEqual(len(pending), 1)
+            self.assertNotEqual(pending[0].id, first_id)
+
+            total_min = len(adaptive.BASE_ORDER) + adaptive.MIN_ADAPTIVE_ANSWERS
+            total_max = len(adaptive.BASE_ORDER) + adaptive.MAX_ADAPTIVE_ANSWERS
+            self.assertEqual(total_min, 35)
+            self.assertEqual(total_max, 50)
+
     def test_adaptive_scores_are_comparable_on_fixed_axes(self):
         with Session(self.engine) as db:
             state = adaptive.state(db, user_id=self.user_id)
