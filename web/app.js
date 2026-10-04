@@ -1794,16 +1794,20 @@
     clearPoller();
     const route=(location.hash||"#home").slice(1).split("?")[0];
     if(route==="reset-password") return renderPasswordReset();
-    if(!state.authenticated && route==="login") return renderAuth("login");
-    if(!state.authenticated && route==="register") return renderAuth("register");
     if(!state.authenticated){
       try{
         await api("/api/v1/auth/methods");
         state.authenticated=true;
       }catch(e){
-        if(e.status===401){renderLanding();return;}
+        if(e.status===401){
+          if(route==="login") return renderAuth("login");
+          if(route==="register") return renderAuth("register");
+          renderLanding();
+          return;
+        }
       }
     }
+    if(state.authenticated&&(route==="login"||route==="register"))return setRoute("home");
     document.body.classList.remove("landing-active");
     if(route==="onboarding") return renderOnboarding(force);
     if(route==="home") return renderHome();
