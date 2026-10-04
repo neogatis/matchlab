@@ -1525,15 +1525,18 @@
   }
 
   async function renderProfileEdit(){
-    clearPoller(); loading("profile"); await loadMe();
+    clearPoller();loading("profile");await loadMe();
     const p=state.profile?.profile||{};
+    const otherCity=p.market_code==="KZ-OTHER";
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Редактировать профиль")+
       '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Основное</div><h2>О вас</h2></div></div>'+
       '<div class="form-grid">'+
         '<label class="field-label">Имя<input class="input" id="edit-name" maxlength="80" value="'+esc(p.display_name||"")+'"></label>'+
         '<label class="field-label">Дата рождения<input class="input" id="edit-dob" type="date" value="'+esc(p.dob||"")+'"></label>'+
         '<label class="field-label">Ваш пол'+selectHtml("edit-gender",p.gender,[["M","Мужчина"],["F","Женщина"],["OTHER","Другое"]])+'</label>'+
-        '<label class="field-label">Кого ищете'+selectHtml("edit-seek",p.seek_gender,[["F","Женщину"],["M","Мужчину"],["ANY","Не важно"],["OTHER","Другое"]])+'</label>'+
+        '<label class="field-label">Кого рассматриваете'+selectHtml("edit-seek",p.seek_gender,[["F","Женщин"],["M","Мужчин"],["OTHER","Другой вариант"],["ANY","Пол не важен"]])+'</label>'+
+        '<label class="field-label">Город'+selectHtml("edit-market",p.market_code,MARKET_OPTIONS,"Выберите город")+'</label>'+
+        '<label class="field-label" id="edit-city-other-wrap" '+(otherCity?"":"hidden")+'>Ваш город<input class="input" id="edit-city-other" maxlength="120" value="'+esc(otherCity?(p.city||""):"")+'"></label>'+
         '<label class="field-label">Рост, см<input class="input" id="edit-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'"></label>'+
         '<label class="field-label">Цель знакомства'+selectHtml("edit-goal",p.dating_goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])+'</label>'+
         '<label class="field-label">Дети'+selectHtml("edit-children",p.children_status,[["NO_CHILDREN","Нет детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
@@ -1549,106 +1552,58 @@
     '</main>'+nav("profile");
     bindCommon();
     document.getElementById("profile-back").onclick=()=>setRoute("profile");
-    document.getElementById("save-profile-edit").onclick=async()=>{
-      const height=Number(document.getElementById("edit-height").value);
-      if(!document.getElementById("edit-name").value.trim())return inlineStatus("profile-edit-status","Укажите имя.",true);
-      if(!document.getElementById("edit-dob").value)return inlineStatus("profile-edit-status","Укажите дату рождения.",true);
-      if(!height)return inlineStatus("profile-edit-status","Укажите рост.",true);
-      const btn=document.getElementById("save-profile-edit");
-      btn.disabled=true; inlineStatus("profile-edit-status","Сохраняем…");
+    const market=pick("edit-market"),otherWrap=pick("edit-city-other-wrap");
+    market.onchange=()=>{otherWrap.hidden=market.value!=="KZ-OTHER"};
+    pick("save-profile-edit").onclick=async()=>{
+      const required=["edit-name","edit-dob","edit-gender","edit-seek","edit-market","edit-height","edit-goal","edit-children","edit-children-plans","edit-smoking","edit-alcohol","edit-lifestyle"];
+      if(required.some(id=>!String(pick(id)?.value||"").trim()))return inlineStatus("profile-edit-status","Заполните все обязательные поля.",true);
+      if(market.value==="KZ-OTHER"&&!pick("edit-city-other").value.trim())return inlineStatus("profile-edit-status","Введите ваш город.",true);
+      const height=Number(pick("edit-height").value);
+      if(!Number.isInteger(height)||height<100||height>250)return inlineStatus("profile-edit-status","Укажите корректный рост.",true);
+      const btn=pick("save-profile-edit");btn.disabled=true;inlineStatus("profile-edit-status","Сохраняем…");
       try{
         await post("/api/v1/profile/basic",{
-          display_name:document.getElementById("edit-name").value.trim(),
-          dob:document.getElementById("edit-dob").value,
-          gender:document.getElementById("edit-gender").value,
-          seek_gender:document.getElementById("edit-seek").value,
-          market_code:p.market_code||"KZ-ALA",
+          display_name:pick("edit-name").value.trim(),dob:pick("edit-dob").value,
+          gender:pick("edit-gender").value,seek_gender:pick("edit-seek").value,
+          market_code:market.value,city_text:market.value==="KZ-OTHER"?pick("edit-city-other").value.trim():"",
           preferred_locale:p.preferred_locale||"ru-KZ"
         });
         await post("/api/v1/profile/details",{
-          height,
-          dating_goal:document.getElementById("edit-goal").value,
-          children_status:document.getElementById("edit-children").value,
-          children_plans:document.getElementById("edit-children-plans").value,
-          smoking:document.getElementById("edit-smoking").value,
-          alcohol:document.getElementById("edit-alcohol").value,
-          lifestyle:document.getElementById("edit-lifestyle").value,
-          bio:document.getElementById("edit-bio").value.trim(),
-          religion:document.getElementById("edit-religion").value.trim(),
+          height,dating_goal:pick("edit-goal").value,children_status:pick("edit-children").value,
+          children_plans:pick("edit-children-plans").value,smoking:pick("edit-smoking").value,
+          alcohol:pick("edit-alcohol").value,lifestyle:pick("edit-lifestyle").value,
+          bio:pick("edit-bio").value.trim(),religion:pick("edit-religion").value.trim(),
           nationality:p.nationality||""
         });
-        await loadMe();
-        inlineStatus("profile-edit-status","Изменения сохранены ✓");
-        btn.disabled=false;
-      }catch(e){
-        btn.disabled=false;inlineStatus("profile-edit-status","Не удалось сохранить: "+e.message,true);
-      }
+        await loadMe();inlineStatus("profile-edit-status","Изменения сохранены ✓");btn.disabled=false;
+      }catch(e){btn.disabled=false;inlineStatus("profile-edit-status","Не удалось сохранить: "+e.message,true)}
     };
   }
 
   async function renderPreferences(){
-    clearPoller(); loading("profile"); await loadMe();
+    clearPoller();loading("profile");await loadMe();
     let data={values:{}};
-    try{data=await api("/api/v1/preferences");}catch{}
+    try{data=await api("/api/v1/preferences")}catch{}
     const values=data.values||{};
-    const val=(key,fallback)=>values[key]?.value??fallback;
-    const age=val("age",{min:23,max:38});
-    const height=val("height",{min:150,max:200});
-    const distance=val("distance_km",{max:100});
-    const first=(key,fallback)=>{
-      const v=val(key,[fallback]);
-      return Array.isArray(v)&&v.length?v[0]:fallback;
-    };
-    const genderValues=val("gender",[]);
-    const gender=Array.isArray(genderValues)&&genderValues.length===1?genderValues[0]:"ANY";
-    const goalValues=val("dating_goal",[]);
-    const goal=Array.isArray(goalValues)&&goalValues.length===1?goalValues[0]:"ANY";
-
+    const p=state.profile?.profile||{};
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Кого я ищу")+
-      '<section class="card settings-card"><div class="eyebrow">Критерии партнёра</div><h2>Показывать только действительно подходящих людей</h2>'+
-      '<p class="muted">Жёсткие критерии отсекают неподходящих кандидатов, остальные влияют на ранжирование совместимости.</p>'+
-      '<div class="form-grid">'+
-        '<label class="field-label">Возраст от<input class="input" id="pref-edit-age-min" type="number" min="18" max="100" value="'+esc(age.min??23)+'"></label>'+
-        '<label class="field-label">Возраст до<input class="input" id="pref-edit-age-max" type="number" min="18" max="100" value="'+esc(age.max??38)+'"></label>'+
-        '<label class="field-label">Кого ищу'+selectHtml("pref-edit-gender",gender,[["F","Женщину"],["M","Мужчину"],["OTHER","Другое"],["ANY","Не важно"]])+'</label>'+
-        '<label class="field-label">Максимальное расстояние, км<input class="input" id="pref-edit-distance" type="number" min="1" max="1000" value="'+esc(distance.max??100)+'"></label>'+
-        '<label class="field-label">Рост от<input class="input" id="pref-edit-height-min" type="number" min="100" max="250" value="'+esc(height.min??150)+'"></label>'+
-        '<label class="field-label">Рост до<input class="input" id="pref-edit-height-max" type="number" min="100" max="250" value="'+esc(height.max??200)+'"></label>'+
-        '<label class="field-label">Цель знакомства'+selectHtml("pref-edit-goal",goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["CHAT","Общение"],["ANY","Не важно"]])+'</label>'+
-        '<label class="field-label">Дети'+selectHtml("pref-edit-children",first("children_status","ANY"),[["ANY","Не важно"],["NO_CHILDREN","Без детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
-        '<label class="field-label">Планы на детей'+selectHtml("pref-edit-plans",first("children_plans","ANY"),[["ANY","Не важно"],["WANTS","Хочет"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет"]])+'</label>'+
-        '<label class="field-label">Курение'+selectHtml("pref-edit-smoking",first("smoking","ANY"),[["ANY","Не важно"],["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])+'</label>'+
-        '<label class="field-label">Алкоголь'+selectHtml("pref-edit-alcohol",first("alcohol","ANY"),[["ANY","Не важно"],["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
-        '<label class="field-label">Образ жизни'+selectHtml("pref-edit-lifestyle",first("lifestyle","ANY"),[["ANY","Не важно"],["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
-      '</div>'+
+      '<section class="card settings-card preference-settings"><div class="eyebrow">Критерии партнёра</div><h2>Что для вас действительно важно?</h2>'+
+      '<p class="muted">У каждого критерия своя важность. «Не важно» полностью исключает его из фильтра и расчёта предпочтений.</p>'+
+      preferenceEditorHtml("pref-edit",values,p)+
       '<button class="primary full" id="save-preferences-edit">Сохранить критерии</button>'+
       '<div id="preferences-status" class="status" hidden></div></section>'+
     '</main>'+nav("profile");
-    bindCommon();
-    document.getElementById("profile-back").onclick=()=>setRoute("profile");
-    document.getElementById("save-preferences-edit").onclick=async()=>{
-      const g=document.getElementById("pref-edit-gender").value;
-      const goalValue=document.getElementById("pref-edit-goal").value;
-      const prefs={
-        age:{importance:"HARD",value:{min:Number(document.getElementById("pref-edit-age-min").value),max:Number(document.getElementById("pref-edit-age-max").value)}},
-        gender:{importance:"HARD",value:g==="ANY"?["M","F","OTHER"]:[g]},
-        market:{importance:"HARD",value:["KZ-ALA"]},
-        distance_km:{importance:"IMPORTANT",value:{max:Number(document.getElementById("pref-edit-distance").value)}},
-        dating_goal:{importance:"IMPORTANT",value:goalValue==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goalValue]},
-        children_status:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-children").value]},
-        children_plans:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-plans").value]},
-        smoking:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-smoking").value]},
-        alcohol:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-alcohol").value]},
-        lifestyle:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-lifestyle").value]},
-        height:{importance:"PREFERENCE",value:{min:Number(document.getElementById("pref-edit-height-min").value),max:Number(document.getElementById("pref-edit-height-max").value)}}
-      };
-      const btn=document.getElementById("save-preferences-edit");
-      btn.disabled=true;inlineStatus("preferences-status","Сохраняем…");
+    bindCommon();bindPreferenceImportance("pref-edit");
+    pick("profile-back").onclick=()=>setRoute("profile");
+    pick("save-preferences-edit").onclick=async()=>{
+      const btn=pick("save-preferences-edit");
       try{
+        const prefs=collectPreferences("pref-edit");
+        btn.disabled=true;inlineStatus("preferences-status","Сохраняем…");
         await post("/api/v1/preferences",{preferences:prefs});
         await loadMe();
         btn.disabled=false;inlineStatus("preferences-status","Критерии сохранены ✓");
-      }catch(e){btn.disabled=false;inlineStatus("preferences-status","Не удалось сохранить: "+e.message,true)}
+      }catch(e){btn.disabled=false;inlineStatus("preferences-status",e.message||"Не удалось сохранить.",true)}
     };
   }
 
