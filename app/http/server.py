@@ -331,7 +331,7 @@ def _send_password_reset_email(email: str, token: str) -> None:
         public_url
         + "/#reset-password?email="
         + quote(email, safe="")
-        + "&token="
+        + "&challenge="
         + quote(token, safe="")
     )
 
