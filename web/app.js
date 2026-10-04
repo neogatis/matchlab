@@ -785,22 +785,40 @@
       '<h1>'+esc(question.text||"")+'</h1>'+
       '<p class="muted">Выберите вариант, который лучше всего описывает вас. Здесь нет правильных ответов.</p>'+
       '<div class="answer-scale">'+(question.options||[]).map(o=>
-        '<button class="answer-option" data-answer="'+esc(o.value)+'"><b>'+esc(o.value)+'</b><span>'+esc(o.label)+'</span></button>'
+        '<button type="button" class="answer-option" data-answer="'+esc(o.value)+'"><b>'+esc(o.value)+'</b><span>'+esc(o.label)+'</span></button>'
       ).join("")+'</div>'+
-      '<button class="ghost full" id="questionnaire-later">Продолжить позже</button>'+
+      '<button type="button" class="primary full questionnaire-continue" id="questionnaire-continue" disabled>Сначала выберите ответ</button>'+
+      '<button type="button" class="ghost full" id="questionnaire-later">Продолжить позже</button>'+
       '</div>');
     pick("onboarding-exit").onclick=()=>setRoute("home");
     pick("questionnaire-later").onclick=()=>setRoute("home");
-    document.querySelectorAll("[data-answer]").forEach(btn=>btn.onclick=async()=>{
-      document.querySelectorAll("[data-answer]").forEach(x=>x.disabled=true);
+    let selectedAnswer = null;
+    const answerButtons = [...document.querySelectorAll("[data-answer]")];
+    const continueAnswer = pick("questionnaire-continue");
+    answerButtons.forEach(btn=>{
+      btn.type="button";
+      btn.onclick=()=>{
+        selectedAnswer=Number(btn.dataset.answer);
+        answerButtons.forEach(x=>x.classList.toggle("selected",x===btn));
+        continueAnswer.disabled=false;
+        continueAnswer.textContent="Продолжить →";
+      };
+    });
+    continueAnswer.onclick=async()=>{
+      if(selectedAnswer===null)return;
+      answerButtons.forEach(x=>x.disabled=true);
+      continueAnswer.disabled=true;
+      continueAnswer.textContent="Сохраняем…";
       try{
-        await post("/api/v1/questionnaire/adaptive/answer",{question_token:question.token,value:Number(btn.dataset.answer)});
-        renderQuestionnaireStep();
+        await post("/api/v1/questionnaire/adaptive/answer",{question_token:question.token,value:selectedAnswer});
+        await renderQuestionnaireStep();
       }catch(e){
-        document.querySelectorAll("[data-answer]").forEach(x=>x.disabled=false);
+        answerButtons.forEach(x=>x.disabled=false);
+        continueAnswer.disabled=false;
+        continueAnswer.textContent="Продолжить →";
         onboardingStatus("Не удалось сохранить ответ: "+e.message,true);
       }
-    });
+    };
   }
 
   async function renderProfile() {
