@@ -990,6 +990,13 @@ def verify_phone_link_code(
                 verified_at=now,
             )
         )
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     db.flush()
     return user
 
