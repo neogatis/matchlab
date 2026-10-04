@@ -68,14 +68,17 @@ class StoreReadinessTests(unittest.TestCase):
         self.assertEqual(manifest["plans"],["FREE","PREMIUM","PREMIUM_PLUS"])
         self.assertIn("DEEP_COMPATIBILITY_REPORT",manifest["one_time_products"])
 
-    def test_native_clients_are_explicitly_not_claimed(self):
+    def test_native_client_claims_match_current_platform_state(self):
         manifest=json.loads(
             (ROOT/"release"/"store_readiness.json").read_text(encoding="utf-8")
         )
         self.assertFalse(manifest["platforms"]["ios"]["native_client_present"])
-        self.assertFalse(manifest["platforms"]["android"]["native_client_present"])
-        self.assertIsNone(manifest["platforms"]["ios"]["bundle_id"])
-        self.assertIsNone(manifest["platforms"]["android"]["application_id"])
+        self.assertEqual(manifest["platforms"]["ios"]["bundle_id"],"com.neogatis.matchlab")
+        self.assertTrue(manifest["platforms"]["android"]["native_client_present"])
+        self.assertEqual(
+            manifest["platforms"]["android"]["application_id"],
+            "com.neogatis.matchlab",
+        )
 
 
 if __name__=="__main__":

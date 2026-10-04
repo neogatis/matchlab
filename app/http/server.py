@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import smtplib
 import threading
 import time
+from email.message import EmailMessage
 from contextlib import contextmanager
 from datetime import date, datetime
 from http import HTTPStatus
@@ -12,7 +14,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
@@ -25,13 +27,16 @@ from app.auth.service import (
     authenticate_identifier_password,
     authenticate_password,
     consume_oidc_nonce,
+    create_challenge,
     create_oidc_nonce,
     create_session,
     lookup_session,
+    normalize_email,
     register_email_user,
     request_phone_link_code,
     request_phone_login_code,
     request_phone_registration_code,
+    reset_password_with_challenge,
     revoke_session,
     verify_phone_link_code,
     verify_phone_login_code,
@@ -46,7 +51,7 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
-from app.db.models import AuthIdentity, Market, Match, Notification, Photo, Profile, PushDevice, User
+from app.db.models import AuthIdentity, Block, Market, Match, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.console.dashboard import prelaunch_dashboard_html
@@ -114,6 +119,13 @@ from app.privacy.service import (
     process_retention_cleanup,
     request_account_deletion,
     retention_policy,
+)
+from app.safety.service import (
+    InvalidReport,
+    SafetyError,
+    block_user,
+    report_user,
+    unblock_user,
 )
 from app.profile.service import (
     MarketUnavailable,
@@ -291,6 +303,55 @@ def phone_auth_configured() -> bool:
             for name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
         ) and has_sender
     return False
+
+
+def password_reset_email_configured() -> bool:
+    return bool(
+        os.environ.get("SMTP_HOST", "").strip()
+        and os.environ.get("SMTP_FROM", "").strip()
+    )
+
+
+def _send_password_reset_email(email: str, token: str) -> None:
+    host = os.environ.get("SMTP_HOST", "").strip()
+    sender = os.environ.get("SMTP_FROM", "").strip()
+    if not host or not sender:
+        raise RuntimeError("password_reset_email_not_configured")
+
+    port = int(os.environ.get("SMTP_PORT", "587") or "587")
+    username = os.environ.get("SMTP_USERNAME", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    use_ssl = os.environ.get("SMTP_SSL", "").strip().lower() in {"1", "true", "yes"}
+    use_starttls = os.environ.get("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes"}
+    public_url = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+    if not public_url:
+        raise RuntimeError("PUBLIC_URL is required for password reset email")
+
+    reset_url = (
+        public_url
+        + "/#reset-password?email="
+        + quote(email, safe="")
+        + "&challenge="
+        + quote(token, safe="")
+    )
+
+    message = EmailMessage()
+    message["Subject"] = "Сброс пароля MatchLab"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        "Вы запросили новый пароль для MatchLab.\n\n"
+        f"Откройте ссылку: {reset_url}\n\n"
+        "Если вы не запрашивали восстановление, просто проигнорируйте это письмо."
+    )
+
+    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_cls(host, port, timeout=10) as client:
+        if not use_ssl and use_starttls:
+            client.starttls()
+        if username:
+            client.login(username, password)
+        client.send_message(message)
 
 
 def _candidate_photo_urls(db, user_id: int, *, limit: int = 5) -> list[str]:
@@ -633,6 +694,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                             and os.environ.get("OPENAI_ADAPTIVE_MODEL", "").strip()
                         ),
                         "phone_auth_configured": phone_auth_configured(),
+                        "password_reset_email_configured": password_reset_email_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
                         "push": {
@@ -806,6 +868,69 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     HTTPStatus.OK,
                     {"ok": True, "user_id": user.id, "auth_method": "phone"},
+                    cookies=[
+                        SESSION_COOKIE.header(bearer),
+                        CSRF_COOKIE.header(csrf),
+                    ],
+                )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/password/reset/request":
+            self._origin_guard()
+            body = self._body()
+            normalized = normalize_email(str(body.get("email", "")))
+            configured = password_reset_email_configured()
+            with runtime().db() as db:
+                user = db.execute(
+                    select(User).where(User.email == normalized)
+                ).scalar_one_or_none()
+                if (
+                    configured
+                    and user is not None
+                    and not user.email.endswith(
+                        ("@phone.matchlab.invalid", "@identity.matchlab.invalid")
+                    )
+                ):
+                    token = create_challenge(
+                        db,
+                        user_id=user.id,
+                        purpose="PASSWORD_RESET",
+                        channel="email",
+                        target=normalized,
+                    )
+                    try:
+                        _send_password_reset_email(normalized, token)
+                    except (OSError, RuntimeError, smtplib.SMTPException):
+                        pass
+            self._send_json(
+                HTTPStatus.ACCEPTED,
+                {
+                    "ok": True,
+                    "delivery": "email" if configured else "email_not_configured",
+                    "message": "Если такой email зарегистрирован, инструкция отправлена.",
+                },
+            )
+            return
+
+        if method == "POST" and path == f"{API_PREFIX}/auth/password/reset/confirm":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                user = reset_password_with_challenge(
+                    db,
+                    email=str(body.get("email", "")),
+                    secret=str(body.get("token", "")),
+                    new_password=str(body.get("password", "")),
+                )
+                bearer = create_session(
+                    db,
+                    user.id,
+                    user_agent=self.headers.get("User-Agent", ""),
+                )
+                csrf = new_csrf_token()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "user_id": user.id},
                     cookies=[
                         SESSION_COOKIE.header(bearer),
                         CSRF_COOKIE.header(csrf),
@@ -1536,6 +1661,82 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/safety/blocked":
+                rows = list(
+                    db.execute(
+                        select(Block)
+                        .where(Block.blocker == principal.user_id)
+                        .order_by(Block.created_at.desc())
+                    ).scalars()
+                )
+                items = []
+                for row in rows:
+                    profile = db.get(Profile, row.blocked)
+                    items.append(
+                        {
+                            "user_id": row.blocked,
+                            "display_name": profile.display_name if profile else "Пользователь",
+                            "age": (
+                                user_age(profile.dob)
+                                if profile is not None and profile.dob is not None
+                                else None
+                            ),
+                            "city": profile.city if profile else None,
+                            "blocked_at": row.created_at,
+                        }
+                    )
+                self._send_json(HTTPStatus.OK, {"blocked": items})
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/safety/block":
+                body = self._body()
+                row = block_user(
+                    db,
+                    blocker=principal.user_id,
+                    blocked=int(body.get("user_id", 0)),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "user_id": row.blocked,
+                        "blocked_at": row.created_at,
+                    },
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/safety/unblock":
+                body = self._body()
+                user_id = int(body.get("user_id", 0))
+                changed = unblock_user(
+                    db,
+                    blocker=principal.user_id,
+                    blocked=user_id,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "user_id": user_id, "changed": changed},
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/safety/report":
+                body = self._body()
+                report = report_user(
+                    db,
+                    reporter=principal.user_id,
+                    target_user=int(body.get("user_id", 0)),
+                    reason=str(body.get("reason", "")),
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "ok": True,
+                        "report_id": report.id,
+                        "status": report.status,
+                    },
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/privacy/export":
                 self._send_json(
                     HTTPStatus.OK,
@@ -1790,6 +1991,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             PreferenceError,
             PrelaunchError,
             PrivacyError,
+            SafetyError,
+            InvalidReport,
             SecurityError,
             ValueError,
         ) as exc:

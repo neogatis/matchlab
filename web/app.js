@@ -133,7 +133,7 @@
             '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
           '</section>' +
         '</div>' +
-        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
+        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
       '</div>' +
     '</main>';
     document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
@@ -150,6 +150,7 @@
       '<input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username">' +
       '<input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password">' +
       '<button class="primary full" id="password-login-btn">Войти →</button>' +
+      '<button class="ghost full auth-link-btn" id="forgot-password-btn" type="button">Забыли пароль?</button>' +
     '</div>' +
     '<div id="login-sms" class="form-stack" hidden>' +
       '<input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel">' +
@@ -169,6 +170,7 @@
         document.getElementById("login-sms").hidden = method !== "sms";
       };
     });
+    document.getElementById("forgot-password-btn").onclick = () => setRoute("reset-password");
     document.getElementById("password-login-btn").onclick = async () => {
       const identifier = document.getElementById("login-identifier").value.trim();
       const password = document.getElementById("login-password-value").value;
@@ -205,6 +207,108 @@
     };
   }
 
+
+  function renderPasswordReset() {
+    clearPoller();
+    const raw=(location.hash||"#reset-password").slice(1);
+    const query=new URLSearchParams(raw.includes("?")?raw.split("?").slice(1).join("?"):"");
+    const linkedEmail=query.get("email")||"";
+    const linkedToken=query.get("challenge")||"";
+    const hasLink=!!(linkedEmail&&linkedToken);
+
+    root.innerHTML='<main class="auth-screen"><div class="auth-wrap">'+
+      '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>'+
+      '<div class="auth-tagline"><div class="eyebrow">Безопасность аккаунта</div><h1>Верните доступ<br><span>к MatchLab.</span></h1><p>Сбросьте пароль по номеру телефона или email.</p></div>'+
+      '<div class="auth-panel"><section class="auth-card">'+
+        '<div class="eyebrow">Восстановление доступа</div><h2 style="font-family:Georgia,serif;font-size:30px;line-height:1.04;margin:7px 0 8px">'+
+          (hasLink?'Задайте новый пароль':'Как восстановить пароль?')+
+        '</h2>'+
+        (hasLink
+          ? '<div class="form-stack"><input class="input" value="'+esc(linkedEmail)+'" disabled>'+
+            '<input class="input" id="reset-linked-password" type="password" autocomplete="new-password" placeholder="Новый пароль — минимум 10 символов">'+
+            '<button class="primary full" id="reset-linked-confirm">Сохранить новый пароль →</button></div>'
+          : '<div class="tabs" id="reset-method-tabs"><button class="tab active" data-reset-method="phone">По номеру</button><button class="tab" data-reset-method="email">По email</button></div>'+
+            '<div id="reset-phone" class="form-stack">'+
+              '<input class="input" id="reset-phone-value" placeholder="+7 747 123 45 67" inputmode="tel">'+
+              '<button class="primary full" id="reset-phone-request">Получить SMS-код →</button>'+
+              '<input class="input" id="reset-phone-code" placeholder="6-значный код" inputmode="numeric" hidden>'+
+              '<input class="input" id="reset-phone-password" type="password" placeholder="Новый пароль — минимум 10 символов" hidden>'+
+              '<button class="primary full" id="reset-phone-confirm" hidden>Сменить пароль →</button>'+
+            '</div>'+
+            '<div id="reset-email" class="form-stack" hidden>'+
+              '<input class="input" id="reset-email-value" type="email" autocomplete="email" placeholder="Ваш email">'+
+              '<button class="primary full" id="reset-email-request">Отправить ссылку →</button>'+
+              '<p class="muted small">Если email зарегистрирован, вы получите ссылку для смены пароля.</p>'+
+            '</div>')+
+        '<div id="form-status" class="status" hidden style="margin-top:14px"></div>'+
+        '<button class="ghost full" id="reset-back-login" type="button">← Вернуться ко входу</button>'+
+      '</section></div>'+
+      '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0"><a href="/privacy" target="_blank" rel="noopener">Конфиденциальность</a> · <a href="/terms" target="_blank" rel="noopener">Условия</a></p>'+
+    '</div></main>';
+
+    document.getElementById("reset-back-login").onclick=()=>{location.hash="";renderAuth("login")};
+
+    if(hasLink){
+      document.getElementById("reset-linked-confirm").onclick=async()=>{
+        const password=document.getElementById("reset-linked-password").value;
+        if(password.length<10)return status("Пароль — минимум 10 символов.",true);
+        status("Сохраняем новый пароль…");
+        try{
+          await post("/api/v1/auth/password/reset/confirm",{email:linkedEmail,token:linkedToken,password});
+          await afterAuth();
+        }catch(e){status("Ссылка недействительна или истекла. Запросите новую.",true)}
+      };
+      return;
+    }
+
+    document.querySelectorAll("[data-reset-method]").forEach(btn=>btn.onclick=()=>{
+      const method=btn.dataset.resetMethod;
+      document.querySelectorAll("[data-reset-method]").forEach(x=>x.classList.toggle("active",x===btn));
+      document.getElementById("reset-phone").hidden=method!=="phone";
+      document.getElementById("reset-email").hidden=method!=="email";
+    });
+
+    document.getElementById("reset-phone-request").onclick=async()=>{
+      const phone=document.getElementById("reset-phone-value").value.trim();
+      if(!phone)return status("Введите номер телефона.",true);
+      status("Отправляем SMS…");
+      try{
+        await post("/api/v1/auth/phone/request",{phone});
+        document.getElementById("reset-phone-code").hidden=false;
+        document.getElementById("reset-phone-password").hidden=false;
+        document.getElementById("reset-phone-confirm").hidden=false;
+        status("Код отправлен. Введите код и новый пароль.");
+      }catch(e){status("Не удалось отправить код: "+e.message,true)}
+    };
+
+    document.getElementById("reset-phone-confirm").onclick=async()=>{
+      const phone=document.getElementById("reset-phone-value").value.trim();
+      const code=document.getElementById("reset-phone-code").value.trim();
+      const password=document.getElementById("reset-phone-password").value;
+      if(!code)return status("Введите SMS-код.",true);
+      if(password.length<10)return status("Пароль — минимум 10 символов.",true);
+      status("Меняем пароль…");
+      try{
+        await post("/api/v1/auth/phone/verify",{phone,code,password});
+        await afterAuth();
+      }catch(e){status("Код неверный или истёк.",true)}
+    };
+
+    document.getElementById("reset-email-request").onclick=async()=>{
+      const email=document.getElementById("reset-email-value").value.trim();
+      if(!email)return status("Введите email.",true);
+      status("Отправляем инструкцию…");
+      try{
+        const result=await post("/api/v1/auth/password/reset/request",{email});
+        if(result.delivery==="email_not_configured"){
+          status("Сброс по email временно не подключён. Используйте номер телефона.",true);
+        }else{
+          status("Если такой email зарегистрирован, ссылка уже отправлена.");
+        }
+      }catch(e){status("Не удалось отправить инструкцию: "+e.message,true)}
+    };
+  }
+
   function registerForm() {
     return '<div class="tabs">' +
       '<button class="tab active" data-register-method="phone">По номеру</button>' +
@@ -221,7 +325,8 @@
       '<input class="input" id="reg-email" type="email" placeholder="Email" autocomplete="email">' +
       '<input class="input" id="reg-email-password" type="password" placeholder="Придумайте пароль">' +
       '<button class="primary full" id="reg-email-finish">Зарегистрироваться →</button>' +
-    '</div>';
+    '</div>' +
+    '<label class="legal-check"><input type="checkbox" id="reg-legal"><span>Мне есть 18 лет, я принимаю <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>.</span></label>';
   }
 
   function bindRegister() {
@@ -234,6 +339,7 @@
       };
     });
     document.getElementById("reg-phone-request").onclick = async () => {
+      if(!document.getElementById("reg-legal").checked)return status("Подтвердите 18+ и принятие Условий и Политики конфиденциальности.",true);
       const phone = document.getElementById("reg-phone").value.trim();
       const password = document.getElementById("reg-phone-password").value;
       if (!phone) return status("Введите номер телефона.", true);
@@ -261,6 +367,7 @@
       } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
     };
     document.getElementById("reg-email-finish").onclick = async () => {
+      if(!document.getElementById("reg-legal").checked)return status("Подтвердите 18+ и принятие Условий и Политики конфиденциальности.",true);
       const email = document.getElementById("reg-email").value.trim();
       const password = document.getElementById("reg-email-password").value;
       if (!email) return status("Введите email.", true);
@@ -335,10 +442,12 @@
         '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div></div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
-        '<div class="actions">' +
+        '<div class="actions candidate-actions">' +
+          '<button class="ghost" data-candidate-skip="' + c.user_id + '">Пропустить</button>' +
           '<button class="secondary" data-candidate-detail="' + c.user_id + '">Подробнее</button>' +
           '<button class="primary" data-candidate-like="' + c.user_id + '">Хочу познакомиться</button>' +
         '</div>' +
+        '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Пожаловаться или заблокировать</button>' +
       '</div>' +
     '</article>';
   }
@@ -408,6 +517,31 @@
         }
       };
     });
+    document.querySelectorAll("[data-candidate-skip]").forEach(btn=>{
+      btn.onclick=async()=>{
+        const id=Number(btn.dataset.candidateSkip);
+        btn.disabled=true;
+        btn.textContent="Пропускаем…";
+        try{
+          await post("/api/v1/discovery/decision",{candidate_user_id:id,action:"SKIPPED"});
+          state.candidates=state.candidates.filter(x=>Number(x.user_id)!==id);
+          if(state.currentCandidate&&Number(state.currentCandidate.user_id)===id)state.currentCandidate=null;
+          if((location.hash||"").startsWith("#candidate"))setRoute("home");
+          else renderHome();
+        }catch(e){
+          btn.disabled=false;
+          btn.textContent="Пропустить";
+          alert("Не удалось пропустить профиль: "+e.message);
+        }
+      };
+    });
+    document.querySelectorAll("[data-candidate-safety]").forEach(btn=>{
+      btn.onclick=()=>{
+        const id=Number(btn.dataset.candidateSafety);
+        const candidate=state.candidates.find(x=>Number(x.user_id)===id)||state.currentCandidate||{};
+        showSafetyModal(id,candidate.display_name||"этого пользователя");
+      };
+    });
   }
 
   function renderCandidate() {
@@ -436,6 +570,59 @@
     '</main>' + nav("home");
     bindCommon(); bindCandidates();
     document.getElementById("back-home").onclick = () => setRoute("home");
+  }
+
+
+  function showSafetyModal(userId,name="пользователя"){
+    if(!userId)return;
+    document.querySelector(".modal-backdrop.safety-modal")?.remove();
+    const modal=document.createElement("div");
+    modal.className="modal-backdrop safety-modal";
+    modal.innerHTML='<div class="modal">'+
+      '<div class="eyebrow">Безопасность</div>'+
+      '<h2>Действия с '+esc(name)+'</h2>'+
+      '<p class="muted">Жалоба отправляется на модерацию. Блокировка сразу убирает человека из подбора и запрещает сообщения.</p>'+
+      '<label class="field-label">Причина жалобы<select class="input" id="safety-reason">'+
+        '<option value="SPAM">Спам</option><option value="HARASSMENT">Оскорбления / преследование</option>'+
+        '<option value="SCAM">Мошенничество</option><option value="FAKE_PROFILE">Фейковый профиль</option>'+
+        '<option value="SEXUAL_CONTENT">Нежелательный сексуальный контент</option><option value="VIOLENCE">Угрозы / насилие</option>'+
+        '<option value="UNDERAGE">Возможный несовершеннолетний</option><option value="PRIVACY">Нарушение приватности</option>'+
+        '<option value="OTHER">Другое</option></select></label>'+
+      '<button class="secondary full" id="safety-report">Отправить жалобу</button>'+
+      '<button class="danger-btn full" id="safety-block">Заблокировать пользователя</button>'+
+      '<button class="ghost full" id="safety-close">Отмена</button>'+
+      '<div id="safety-status" class="status" hidden></div>'+
+    '</div>';
+    document.body.appendChild(modal);
+    const msg=(text,error=false)=>{
+      const el=document.getElementById("safety-status");
+      if(!el)return;
+      el.hidden=false;el.className="status"+(error?" error":"");el.textContent=text;
+    };
+    document.getElementById("safety-close").onclick=()=>modal.remove();
+    modal.onclick=e=>{if(e.target===modal)modal.remove()};
+    document.getElementById("safety-report").onclick=async()=>{
+      const btn=document.getElementById("safety-report");
+      btn.disabled=true;
+      try{
+        await post("/api/v1/safety/report",{user_id:userId,reason:document.getElementById("safety-reason").value});
+        msg("Жалоба отправлена модераторам.");
+        btn.textContent="Жалоба отправлена ✓";
+      }catch(e){btn.disabled=false;msg("Не удалось отправить жалобу: "+e.message,true)}
+    };
+    document.getElementById("safety-block").onclick=async()=>{
+      if(!confirm("Заблокировать "+name+"? Человек исчезнет из подбора и не сможет писать вам."))return;
+      const btn=document.getElementById("safety-block");
+      btn.disabled=true;
+      try{
+        await post("/api/v1/safety/block",{user_id:userId});
+        state.candidates=state.candidates.filter(x=>Number(x.user_id)!==Number(userId));
+        modal.remove();
+        alert("Пользователь заблокирован.");
+        if((location.hash||"").startsWith("#chat"))setRoute("chats");
+        else setRoute("home");
+      }catch(e){btn.disabled=false;msg("Не удалось заблокировать: "+e.message,true)}
+    };
   }
 
   function showMutual(matchId, candidateId) {
@@ -525,13 +712,18 @@
         photo(p,"avatar small")+
         '<div class="chat-title"><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
         '<span>'+esc(conv.mutual_fit_score??conv.compatibility_score??"")+(conv.mutual_fit_score!=null||conv.compatibility_score!=null?"% совместимость":"")+'</span></div>'+
-        '<button class="icon-btn">⋯</button></header>'+
+        '<button class="icon-btn" id="chat-safety">⋯</button></header>'+
       '<div id="messages" class="messages"><div class="loader"></div></div>'+
     '</main>'+
     '<div class="composer"><textarea id="message-input" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message">➤</button></div>'+
     nav("chats");
     bindCommon();
     document.getElementById("chat-back").onclick=()=>setRoute("chats");
+    const safetyBtn=document.getElementById("chat-safety");
+    if(safetyBtn)safetyBtn.onclick=()=>{
+      const userId=Number(p.user_id||conv.other_user_id||0);
+      if(userId)showSafetyModal(userId,p.display_name||conv.other_display_name||"этого пользователя");
+    };
     document.getElementById("send-message").onclick=sendCurrentMessage;
     await loadMessages();
     state.poller=setInterval(loadMessages,5000);
@@ -591,7 +783,8 @@
 
   function firstIncompleteStep() {
     const c=state.onboarding?.completion||{};
-    return (ONBOARDING_STEPS.find(([key])=>!c[key])||["photos"])[0];
+    const item=ONBOARDING_STEPS.find(([key])=>!c[key]);
+    return item ? item[0] : null;
   }
 
   function onboardingChrome(step, body) {
@@ -623,6 +816,7 @@
     const step=firstIncompleteStep();
     const p=state.onboarding?.profile||state.profile?.profile||{};
 
+    if(!step) return renderWaitlistCompletion();
     if(step==="questionnaire") return renderQuestionnaireStep();
 
     let body="";
@@ -767,6 +961,35 @@
     }
   }
 
+
+  async function renderWaitlistCompletion(){
+    clearPoller();
+    if(!state.onboarding) await loadMe();
+    const p=state.onboarding?.profile||state.profile?.profile||{};
+    let waitlist=state.onboarding?.waitlist||{};
+    try{waitlist=await api("/api/v1/waitlist/status");}catch{}
+    const ready=!!waitlist.ready;
+    const stateLabel=waitlist.state==="WAITLIST"?"Вы в листе ожидания":waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":"Профиль готов";
+    root.innerHTML='<main class="onboarding-page waitlist-page">'+
+      '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div><button class="ghost" id="waitlist-profile">Профиль</button></header>'+
+      '<section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
+        '<div class="waitlist-mark">'+(ready?"✓":"♡")+'</div>'+
+        '<div class="eyebrow">Анкета завершена</div>'+
+        '<h1>'+esc(stateLabel)+(p.display_name?" — "+esc(p.display_name):"")+'</h1>'+
+        '<p class="muted">'+esc(waitlist.message||"Ваш профиль сохранён. Мы сообщим, когда подбор станет доступен.")+'</p>'+
+        '<div class="waitlist-summary">'+
+          '<div><b>100%</b><span>анкета заполнена</span></div>'+
+          '<div><b>'+esc(p.market_code==="KZ-ALA"?"Алматы":p.market_code||"Алматы")+'</b><span>город запуска</span></div>'+
+          '<div><b>'+esc(ready?"Готов":"Проверяем")+'</b><span>статус профиля</span></div>'+
+        '</div>'+
+        '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
+        '<button class="secondary full" id="waitlist-edit">Изменить профиль</button>'+
+      '</div></section></main>';
+    document.getElementById("waitlist-home").onclick=()=>setRoute("home");
+    document.getElementById("waitlist-edit").onclick=()=>setRoute("profile");
+    document.getElementById("waitlist-profile").onclick=()=>setRoute("profile");
+  }
+
   async function renderQuestionnaireStep(){
     let q;
     try{q=await api("/api/v1/questionnaire/adaptive");}
@@ -821,34 +1044,428 @@
     };
   }
 
+  function ageFromDob(dob){
+    if(!dob)return null;
+    const birth=new Date(dob+"T00:00:00");
+    if(Number.isNaN(birth.getTime()))return null;
+    const now=new Date();
+    let age=now.getFullYear()-birth.getFullYear();
+    const beforeBirthday=(now.getMonth()<birth.getMonth())||(now.getMonth()===birth.getMonth()&&now.getDate()<birth.getDate());
+    if(beforeBirthday)age--;
+    return age;
+  }
+
+  function completionPercent(c={}){
+    const keys=["basic","relationship","readiness","details","questionnaire","partner_preferences","photos"];
+    return Math.round(keys.filter(key=>!!c[key]).length*100/keys.length);
+  }
+
+  function profileBackHeader(title,back="profile"){
+    return '<header class="topbar profile-subhead"><button class="icon-btn" id="profile-back">←</button><div><div class="eyebrow">Профиль</div><div class="brand" style="font-size:25px">'+esc(title)+'</div></div><div></div></header>';
+  }
+
+  function inlineStatus(id,message,error=false){
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.hidden=false;
+    el.className="status"+(error?" error":"");
+    el.textContent=message;
+  }
+
+  function profileMenuRow(icon,title,subtitle,route,badge=""){
+    return '<button class="profile-menu-row" data-route="'+route+'">'+
+      '<span class="profile-menu-icon">'+icon+'</span>'+
+      '<span class="profile-menu-copy"><b>'+esc(title)+'</b><small>'+esc(subtitle)+'</small></span>'+
+      (badge?'<span class="profile-menu-badge">'+esc(badge)+'</span>':'')+
+      '<span class="profile-menu-arrow">›</span>'+
+    '</button>';
+  }
+
   async function renderProfile() {
     clearPoller(); loading("profile"); await loadMe();
-    const p=state.profile?.profile;
+    const p=state.profile?.profile||{};
     const c=state.profile?.completion||{};
-    const steps=[
-      ["Базовый профиль",c.basic],["Статус отношений",c.relationship],["Готовность",c.readiness],
-      ["О себе",c.details],["Анкета",c.questionnaire],["Критерии партнёра",c.partner_preferences],["Фото",c.photos]
-    ];
-    root.innerHTML='<main class="page">'+topbar("Профиль")+
-      '<section class="card"><div class="eyebrow">Ваш профиль</div><h2 style="font-family:Georgia,serif;font-size:30px">'+esc(p?.display_name||"MatchLab")+'</h2>'+
-      '<p class="muted">'+esc(p?.city||"Алматы")+'</p>'+
-      '<div class="tags">'+steps.map(([name,done])=>'<span class="tag">'+(done?"✓ ":"○ ")+esc(name)+'</span>').join("")+'</div>'+
-      '<button class="secondary full" id="logout-btn" style="margin-top:14px">Выйти из аккаунта</button></section>'+
-      '<div class="section-head"><h2>Статус анкеты</h2></div>'+
-      '<section class="card"><p>'+esc(state.onboarding?.waitlist?.message||"Продолжайте заполнять профиль, чтобы участвовать в подборе.")+'</p>'+
-      '<button class="primary full" id="continue-onboarding">Продолжить анкету →</button></section>'+
+    const pct=completionPercent(c);
+    let photoData={photos:[]};
+    try{photoData=await api("/api/v1/photos");}catch{}
+    const photos=photoData.photos||[];
+    const mainPhoto=photos.find(x=>x.is_main)||photos[0];
+    const age=ageFromDob(p.dob);
+    const waitlist=state.onboarding?.waitlist||{};
+    const statusLabels={
+      ACTIVE_SEARCH:"Активно знакомлюсь",
+      OPEN_TO_MATCH:"Открыт(а) к знакомствам",
+      PAUSED:"На паузе",
+      IN_RELATIONSHIP:"Уже в отношениях",
+      NOT_ACTIVE:"Знакомства выключены",
+    };
+    const photoHtml=mainPhoto?.url
+      ? '<img class="profile-avatar-large" src="'+esc(mainPhoto.url)+'" alt="Фото профиля">'
+      : '<div class="profile-avatar-large profile-avatar-empty">♡</div>';
+
+    root.innerHTML='<main class="page profile-page">'+topbar("Профиль")+
+      '<section class="card profile-overview">'+
+        '<div class="profile-overview-main">'+photoHtml+
+          '<div><div class="eyebrow">Ваш профиль</div><h1>'+esc(p.display_name||"MatchLab")+(age?", "+age:"")+'</h1>'+
+          '<p class="muted">'+esc(p.city||"Алматы")+'</p>'+
+          '<span class="profile-state">'+esc(statusLabels[p.relationship_status]||"Настройте статус знакомств")+'</span></div>'+
+        '</div>'+
+        '<div class="profile-completion"><div class="profile-completion-copy"><b>Профиль заполнен на '+pct+'%</b><span>'+esc(waitlist.message||"Заполненный профиль помогает подобрать более совместимых людей.")+'</span></div>'+
+        '<div class="progress-track big"><i style="width:'+pct+'%"></i></div></div>'+
+        (pct<100?'<button class="primary full" data-route="onboarding">Продолжить анкету →</button>':
+          '<button class="secondary full" data-route="onboarding">Статус листа ожидания</button>')+
+      '</section>'+
+      '<section class="profile-menu">'+
+        profileMenuRow("👤","Редактировать профиль","Имя, о себе, образ жизни","profile-edit")+
+        profileMenuRow("🎯","Кого я ищу","Возраст, цели, привычки и другие критерии","preferences")+
+        profileMenuRow("🧠","Моя совместимость","Что анкета говорит о ваших приоритетах","compatibility",c.questionnaire?"Готово":"")+
+        profileMenuRow("📷","Мои фотографии","Добавить, удалить, выбрать главное фото","photos",(photoData.progress?.approved||0)+"/2")+
+        profileMenuRow("❤️","Статус знакомств","Активно, пауза или уже в отношениях","dating-status")+
+        profileMenuRow("🔔","Уведомления","Push и разрешения этого устройства","notifications")+
+        profileMenuRow("🛡","Безопасность и заблокированные","Жалобы, блокировки и список исключений","safety")+
+        profileMenuRow("⚙️","Настройки аккаунта","Вход, данные, документы и удаление","settings")+
+      '</section>'+
     '</main>'+nav("profile");
     bindCommon();
-    const continueBtn=document.getElementById("continue-onboarding");
-    if(continueBtn) continueBtn.onclick=()=>setRoute("onboarding");
-    document.getElementById("logout-btn").onclick=async()=>{
+  }
+
+  async function renderProfileEdit(){
+    clearPoller(); loading("profile"); await loadMe();
+    const p=state.profile?.profile||{};
+    root.innerHTML='<main class="page">'+profileBackHeader("Редактировать профиль")+
+      '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Основное</div><h2>О вас</h2></div></div>'+
+      '<div class="form-grid">'+
+        '<label class="field-label">Имя<input class="input" id="edit-name" maxlength="80" value="'+esc(p.display_name||"")+'"></label>'+
+        '<label class="field-label">Дата рождения<input class="input" id="edit-dob" type="date" value="'+esc(p.dob||"")+'"></label>'+
+        '<label class="field-label">Ваш пол'+selectHtml("edit-gender",p.gender,[["M","Мужчина"],["F","Женщина"],["OTHER","Другое"]])+'</label>'+
+        '<label class="field-label">Кого ищете'+selectHtml("edit-seek",p.seek_gender,[["F","Женщину"],["M","Мужчину"],["ANY","Не важно"],["OTHER","Другое"]])+'</label>'+
+        '<label class="field-label">Рост, см<input class="input" id="edit-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'"></label>'+
+        '<label class="field-label">Цель знакомства'+selectHtml("edit-goal",p.dating_goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])+'</label>'+
+        '<label class="field-label">Дети'+selectHtml("edit-children",p.children_status,[["NO_CHILDREN","Нет детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
+        '<label class="field-label">Планы на детей'+selectHtml("edit-children-plans",p.children_plans,[["WANTS","Хочу"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочу"]])+'</label>'+
+        '<label class="field-label">Курение'+selectHtml("edit-smoking",p.smoking,[["NO","Не курю"],["RARE","Иногда"],["YES","Курю"]])+'</label>'+
+        '<label class="field-label">Алкоголь'+selectHtml("edit-alcohol",p.alcohol,[["NO","Не употребляю"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
+        '<label class="field-label">Образ жизни'+selectHtml("edit-lifestyle",p.lifestyle,[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
+        '<label class="field-label">Религия — необязательно<input class="input" id="edit-religion" maxlength="120" value="'+esc(p.religion||"")+'"></label>'+
+      '</div>'+
+      '<label class="field-label" style="margin-top:14px">О себе<textarea class="input textarea" id="edit-bio" maxlength="2000">'+esc(p.bio||"")+'</textarea></label>'+
+      '<button class="primary full" id="save-profile-edit">Сохранить изменения</button>'+
+      '<div id="profile-edit-status" class="status" hidden></div></section>'+
+    '</main>'+nav("profile");
+    bindCommon();
+    document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.getElementById("save-profile-edit").onclick=async()=>{
+      const height=Number(document.getElementById("edit-height").value);
+      if(!document.getElementById("edit-name").value.trim())return inlineStatus("profile-edit-status","Укажите имя.",true);
+      if(!document.getElementById("edit-dob").value)return inlineStatus("profile-edit-status","Укажите дату рождения.",true);
+      if(!height)return inlineStatus("profile-edit-status","Укажите рост.",true);
+      const btn=document.getElementById("save-profile-edit");
+      btn.disabled=true; inlineStatus("profile-edit-status","Сохраняем…");
+      try{
+        await post("/api/v1/profile/basic",{
+          display_name:document.getElementById("edit-name").value.trim(),
+          dob:document.getElementById("edit-dob").value,
+          gender:document.getElementById("edit-gender").value,
+          seek_gender:document.getElementById("edit-seek").value,
+          market_code:p.market_code||"KZ-ALA",
+          preferred_locale:p.preferred_locale||"ru-KZ"
+        });
+        await post("/api/v1/profile/details",{
+          height,
+          dating_goal:document.getElementById("edit-goal").value,
+          children_status:document.getElementById("edit-children").value,
+          children_plans:document.getElementById("edit-children-plans").value,
+          smoking:document.getElementById("edit-smoking").value,
+          alcohol:document.getElementById("edit-alcohol").value,
+          lifestyle:document.getElementById("edit-lifestyle").value,
+          bio:document.getElementById("edit-bio").value.trim(),
+          religion:document.getElementById("edit-religion").value.trim(),
+          nationality:p.nationality||""
+        });
+        await loadMe();
+        inlineStatus("profile-edit-status","Изменения сохранены ✓");
+        btn.disabled=false;
+      }catch(e){
+        btn.disabled=false;inlineStatus("profile-edit-status","Не удалось сохранить: "+e.message,true);
+      }
+    };
+  }
+
+  async function renderPreferences(){
+    clearPoller(); loading("profile"); await loadMe();
+    let data={values:{}};
+    try{data=await api("/api/v1/preferences");}catch{}
+    const values=data.values||{};
+    const val=(key,fallback)=>values[key]?.value??fallback;
+    const age=val("age",{min:23,max:38});
+    const height=val("height",{min:150,max:200});
+    const distance=val("distance_km",{max:100});
+    const first=(key,fallback)=>{
+      const v=val(key,[fallback]);
+      return Array.isArray(v)&&v.length?v[0]:fallback;
+    };
+    const genderValues=val("gender",[]);
+    const gender=Array.isArray(genderValues)&&genderValues.length===1?genderValues[0]:"ANY";
+    const goalValues=val("dating_goal",[]);
+    const goal=Array.isArray(goalValues)&&goalValues.length===1?goalValues[0]:"ANY";
+
+    root.innerHTML='<main class="page">'+profileBackHeader("Кого я ищу")+
+      '<section class="card settings-card"><div class="eyebrow">Критерии партнёра</div><h2>Показывать только действительно подходящих людей</h2>'+
+      '<p class="muted">Жёсткие критерии отсекают неподходящих кандидатов, остальные влияют на ранжирование совместимости.</p>'+
+      '<div class="form-grid">'+
+        '<label class="field-label">Возраст от<input class="input" id="pref-edit-age-min" type="number" min="18" max="100" value="'+esc(age.min??23)+'"></label>'+
+        '<label class="field-label">Возраст до<input class="input" id="pref-edit-age-max" type="number" min="18" max="100" value="'+esc(age.max??38)+'"></label>'+
+        '<label class="field-label">Кого ищу'+selectHtml("pref-edit-gender",gender,[["F","Женщину"],["M","Мужчину"],["OTHER","Другое"],["ANY","Не важно"]])+'</label>'+
+        '<label class="field-label">Максимальное расстояние, км<input class="input" id="pref-edit-distance" type="number" min="1" max="1000" value="'+esc(distance.max??100)+'"></label>'+
+        '<label class="field-label">Рост от<input class="input" id="pref-edit-height-min" type="number" min="100" max="250" value="'+esc(height.min??150)+'"></label>'+
+        '<label class="field-label">Рост до<input class="input" id="pref-edit-height-max" type="number" min="100" max="250" value="'+esc(height.max??200)+'"></label>'+
+        '<label class="field-label">Цель знакомства'+selectHtml("pref-edit-goal",goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["CHAT","Общение"],["ANY","Не важно"]])+'</label>'+
+        '<label class="field-label">Дети'+selectHtml("pref-edit-children",first("children_status","ANY"),[["ANY","Не важно"],["NO_CHILDREN","Без детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
+        '<label class="field-label">Планы на детей'+selectHtml("pref-edit-plans",first("children_plans","ANY"),[["ANY","Не важно"],["WANTS","Хочет"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет"]])+'</label>'+
+        '<label class="field-label">Курение'+selectHtml("pref-edit-smoking",first("smoking","ANY"),[["ANY","Не важно"],["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])+'</label>'+
+        '<label class="field-label">Алкоголь'+selectHtml("pref-edit-alcohol",first("alcohol","ANY"),[["ANY","Не важно"],["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
+        '<label class="field-label">Образ жизни'+selectHtml("pref-edit-lifestyle",first("lifestyle","ANY"),[["ANY","Не важно"],["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
+      '</div>'+
+      '<button class="primary full" id="save-preferences-edit">Сохранить критерии</button>'+
+      '<div id="preferences-status" class="status" hidden></div></section>'+
+    '</main>'+nav("profile");
+    bindCommon();
+    document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.getElementById("save-preferences-edit").onclick=async()=>{
+      const g=document.getElementById("pref-edit-gender").value;
+      const goalValue=document.getElementById("pref-edit-goal").value;
+      const prefs={
+        age:{importance:"HARD",value:{min:Number(document.getElementById("pref-edit-age-min").value),max:Number(document.getElementById("pref-edit-age-max").value)}},
+        gender:{importance:"HARD",value:g==="ANY"?["M","F","OTHER"]:[g]},
+        market:{importance:"HARD",value:["KZ-ALA"]},
+        distance_km:{importance:"IMPORTANT",value:{max:Number(document.getElementById("pref-edit-distance").value)}},
+        dating_goal:{importance:"IMPORTANT",value:goalValue==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goalValue]},
+        children_status:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-children").value]},
+        children_plans:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-plans").value]},
+        smoking:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-smoking").value]},
+        alcohol:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-alcohol").value]},
+        lifestyle:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-lifestyle").value]},
+        height:{importance:"PREFERENCE",value:{min:Number(document.getElementById("pref-edit-height-min").value),max:Number(document.getElementById("pref-edit-height-max").value)}}
+      };
+      const btn=document.getElementById("save-preferences-edit");
+      btn.disabled=true;inlineStatus("preferences-status","Сохраняем…");
+      try{
+        await post("/api/v1/preferences",{preferences:prefs});
+        await loadMe();
+        btn.disabled=false;inlineStatus("preferences-status","Критерии сохранены ✓");
+      }catch(e){btn.disabled=false;inlineStatus("preferences-status","Не удалось сохранить: "+e.message,true)}
+    };
+  }
+
+  async function renderCompatibility(){
+    clearPoller(); loading("profile");
+    let data=null;
+    try{data=await api("/api/v1/compatibility/me");}catch{}
+    root.innerHTML='<main class="page">'+profileBackHeader("Моя совместимость")+
+      (data
+        ? '<section class="card compatibility-self"><div class="eyebrow">Ваш профиль совместимости</div><h2>Не «оценка личности», а карта приоритетов</h2>'+
+          '<p class="muted">'+esc(data.note||"")+'</p>'+
+          '<div class="compatibility-bars">'+Object.entries(data.summary||{}).map(([label,value])=>
+            '<div class="compatibility-row"><div><b>'+esc(label)+'</b><span>'+esc(value)+'%</span></div><div class="compatibility-track"><i style="width:'+Math.max(0,Math.min(100,Number(value)||0))+'%"></i></div></div>'
+          ).join("")+'</div>'+
+          '<div class="insight-box"><b>Как это используется</b><p>MatchLab сравнивает не один общий процент, а несколько областей: ценности, отношение к семье, близость, социальность и другие сигналы анкеты. Итоговый подбор учитывает также ваши критерии партнёра.</p></div>'+
+          '<button class="secondary full" data-route="preferences">Изменить критерии партнёра</button></section>'
+        : '<section class="card empty"><div class="emoji">🧠</div><h3>Сначала завершите анкету</h3><p class="muted">После заполнения мы покажем ваш профиль совместимости.</p><button class="primary" data-route="onboarding">Продолжить анкету</button></section>')+
+    '</main>'+nav("profile");
+    bindCommon();
+    document.getElementById("profile-back").onclick=()=>setRoute("profile");
+  }
+
+  async function renderPhotos(){
+    clearPoller(); loading("profile");
+    let data={photos:[],progress:{}};
+    try{data=await api("/api/v1/photos");}catch(e){
+      root.innerHTML='<main class="page">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(e.message)+'</p></section></main>'+nav("profile");
+      bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");return;
+    }
+    const items=(data.photos||[]).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    const statusLabel={APPROVED:"Одобрено",PENDING:"На модерации",REJECTED:"Отклонено"};
+    root.innerHTML='<main class="page">'+profileBackHeader("Мои фотографии")+
+      '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Фотографии</div><h2>'+(data.progress?.approved||0)+'/2 одобрено</h2></div></div>'+
+      '<p class="muted">Первое главное фото показывается в подборе. Можно добавить до лимита, удалить или поменять порядок.</p>'+
+      '<div class="photo-manager-grid">'+
+        items.map((item,index)=>'<article class="photo-manager-item">'+
+          (item.url?'<img src="'+esc(item.url)+'" alt="Фото '+(index+1)+'">':'<div class="photo-manager-placeholder">Фото</div>')+
+          '<div class="photo-manager-meta"><span class="photo-status '+String(item.moderation_status||"").toLowerCase()+'">'+esc(statusLabel[item.moderation_status]||item.moderation_status||"")+'</span>'+
+          (item.is_main?'<b>Главное</b>':'')+'</div>'+
+          (item.moderation_reason?'<small class="photo-reason">'+esc(item.moderation_reason)+'</small>':'')+
+          '<div class="photo-manager-actions">'+
+            (item.moderation_status==="APPROVED"&&!item.is_main?'<button class="secondary" data-photo-main="'+item.id+'">Главное</button>':'')+
+            (index>0?'<button class="ghost" data-photo-move="'+item.id+'" data-dir="-1">←</button>':'')+
+            (index<items.length-1?'<button class="ghost" data-photo-move="'+item.id+'" data-dir="1">→</button>':'')+
+            '<button class="ghost danger-text" data-photo-delete="'+item.id+'">Удалить</button>'+
+          '</div></article>').join("")+
+        '<label class="photo-upload photo-manager-upload"><input type="file" id="profile-photo-upload" accept="image/jpeg,image/png,image/webp"><span>＋ Добавить фото</span><small>JPG, PNG или WEBP · до 12 МБ</small></label>'+
+      '</div><div id="photos-status" class="status" hidden></div></section>'+
+    '</main>'+nav("profile");
+    bindCommon();
+    document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.querySelectorAll("[data-photo-main]").forEach(btn=>btn.onclick=async()=>{
+      try{await post("/api/v1/photos/main",{photo_id:Number(btn.dataset.photoMain)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось выбрать главное фото: "+e.message,true)}
+    });
+    document.querySelectorAll("[data-photo-delete]").forEach(btn=>btn.onclick=async()=>{
+      if(!confirm("Удалить эту фотографию?"))return;
+      try{await post("/api/v1/photos/delete",{photo_id:Number(btn.dataset.photoDelete)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось удалить фото: "+e.message,true)}
+    });
+    document.querySelectorAll("[data-photo-move]").forEach(btn=>btn.onclick=async()=>{
+      const id=Number(btn.dataset.photoMove),dir=Number(btn.dataset.dir);
+      const ids=items.map(x=>Number(x.id));
+      const index=ids.indexOf(id),next=index+dir;
+      if(index<0||next<0||next>=ids.length)return;
+      [ids[index],ids[next]]=[ids[next],ids[index]];
+      try{await post("/api/v1/photos/reorder",{photo_ids:ids});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось изменить порядок: "+e.message,true)}
+    });
+    document.getElementById("profile-photo-upload").onchange=async e=>{
+      const f=e.target.files?.[0];if(!f)return;
+      if(f.size>12*1024*1024)return inlineStatus("photos-status","Фото слишком большое. Максимум 12 МБ.",true);
+      inlineStatus("photos-status","Загружаем фото…");
+      try{
+        const prep=await post("/api/v1/photos/prepare",{mime:f.type});
+        const headers=prep.upload?.headers||{"Content-Type":f.type};
+        const up=await fetch(prep.upload.url,{method:"PUT",headers,body:f});
+        if(!up.ok)throw new Error("upload_failed");
+        await post("/api/v1/photos/finalize",{ticket:prep.ticket});
+        await renderPhotos();
+      }catch(err){inlineStatus("photos-status","Не удалось загрузить фото: "+err.message,true)}
+    };
+  }
+
+  async function renderDatingStatus(){
+    clearPoller(); loading("profile"); await loadMe();
+    const p=state.profile?.profile||{};
+    const relMap={ACTIVE_SEARCH:"ACTIVE",OPEN_TO_MATCH:"OPEN",PAUSED:"UNSURE",NOT_ACTIVE:"NO",IN_RELATIONSHIP:"IN_RELATIONSHIP"};
+    const current=relMap[p.relationship_status]||"ACTIVE";
+    root.innerHTML='<main class="page">'+profileBackHeader("Статус знакомств")+
+      '<section class="card settings-card"><div class="eyebrow">Видимость в подборе</div><h2>Управляйте статусом без удаления профиля</h2>'+
+      '<p class="muted">Пауза или статус «в отношениях» сразу исключают профиль из активного подбора.</p>'+
+      '<div class="form-stack">'+
+        '<label class="field-label">Сейчас я'+selectHtml("dating-openness",current,[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Поставить знакомства на паузу"],["NO","Не хочу знакомств"],["IN_RELATIONSHIP","Уже в отношениях"]])+'</label>'+
+        '<label class="field-label">Готовность общаться в чате'+selectHtml("dating-chat",p.readiness_chat,[["YES","Да, готов(а)"],["RATHER_YES","Скорее да"],["LOOK_ONLY","Пока хочу присмотреться"]])+'</label>'+
+        '<label class="field-label">Готовность встретиться офлайн'+selectHtml("dating-offline",p.readiness_offline,[["YES","Да"],["MAYBE","Возможно, после общения"],["NO","Пока нет"]])+'</label>'+
+        '<button class="primary full" id="save-dating-status">Сохранить статус</button>'+
+        '<div id="dating-status-message" class="status" hidden></div>'+
+      '</div></section>'+
+    '</main>'+nav("profile");
+    bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.getElementById("save-dating-status").onclick=async()=>{
+      const selected=document.getElementById("dating-openness").value;
+      const inRelationship=selected==="IN_RELATIONSHIP";
+      const openness=inRelationship?"NO":selected;
+      const btn=document.getElementById("save-dating-status");btn.disabled=true;
+      inlineStatus("dating-status-message","Сохраняем…");
+      try{
+        await post("/api/v1/profile/relationship",{in_relationship:inRelationship,openness});
+        await post("/api/v1/profile/readiness",{chat:document.getElementById("dating-chat").value,offline:document.getElementById("dating-offline").value});
+        await loadMe();btn.disabled=false;inlineStatus("dating-status-message","Статус обновлён ✓");
+      }catch(e){btn.disabled=false;inlineStatus("dating-status-message","Не удалось сохранить: "+e.message,true)}
+    };
+  }
+
+  async function renderNotifications(){
+    clearPoller(); loading("profile");
+    let devices={devices:[]};
+    try{devices=await api("/api/v1/push/devices");}catch{}
+    const permission=("Notification" in window)?Notification.permission:"unsupported";
+    const permissionLabels={granted:"Разрешены",denied:"Запрещены",default:"Не выбрано",unsupported:"Не поддерживаются"};
+    root.innerHTML='<main class="page">'+profileBackHeader("Уведомления")+
+      '<section class="card settings-card"><div class="eyebrow">Уведомления</div><h2>Не пропускайте важные совпадения</h2>'+
+      '<div class="setting-line"><div><b>Разрешение браузера</b><span class="muted">'+esc(permissionLabels[permission]||permission)+'</span></div>'+
+      (permission==="default"?'<button class="secondary" id="request-browser-notifications">Разрешить</button>':'')+'</div>'+
+      '<div class="setting-line"><div><b>Push-устройства</b><span class="muted">Подключено: '+esc((devices.devices||[]).filter(x=>x.enabled).length)+'</span></div><span class="tag">FCM</span></div>'+
+      '<div class="insight-box"><b>Что уже работает</b><p>Backend умеет регистрировать push-устройства и доставлять системные уведомления. Для web-push нужна отдельная подписка браузера — её подключим после основного P0 UX.</p></div>'+
+      '</section></main>'+nav("profile");
+    bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    const btn=document.getElementById("request-browser-notifications");
+    if(btn)btn.onclick=async()=>{
+      try{await Notification.requestPermission();await renderNotifications()}catch{}
+    };
+  }
+
+  async function renderSafety(){
+    clearPoller(); loading("profile");
+    let data={blocked:[]};
+    try{data=await api("/api/v1/safety/blocked");}catch{}
+    const blocked=data.blocked||[];
+    root.innerHTML='<main class="page">'+profileBackHeader("Безопасность")+
+      '<section class="card settings-card"><div class="eyebrow">Безопасность</div><h2>Заблокированные пользователи</h2>'+
+      '<p class="muted">Заблокированный человек не появляется в подборе и не может отправлять вам сообщения.</p>'+
+      (blocked.length?'<div class="blocked-list">'+blocked.map(item=>
+        '<div class="blocked-row"><div class="profile-avatar-small">⊘</div><div><b>'+esc(item.display_name||"Пользователь")+(item.age?", "+item.age:"")+'</b><small>'+esc(item.city||"")+'</small></div><button class="secondary" data-unblock-user="'+item.user_id+'">Разблокировать</button></div>'
+      ).join("")+'</div>':'<div class="empty compact-empty"><div class="emoji">🛡</div><h3>Список пуст</h3><p class="muted">Здесь появятся люди, которых вы заблокируете из карточки или чата.</p></div>')+
+      '<div id="safety-page-status" class="status" hidden></div>'+
+      '<div class="insight-box"><b>Как пожаловаться</b><p>Откройте карточку кандидата или меню ⋯ в чате и выберите причину жалобы. Она попадёт в очередь модерации.</p></div>'+
+      '</section></main>'+nav("profile");
+    bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.querySelectorAll("[data-unblock-user]").forEach(btn=>btn.onclick=async()=>{
+      try{await post("/api/v1/safety/unblock",{user_id:Number(btn.dataset.unblockUser)});await renderSafety()}catch(e){inlineStatus("safety-page-status","Не удалось разблокировать: "+e.message,true)}
+    });
+  }
+
+  async function renderSettings(){
+    clearPoller(); loading("profile");
+    let methods={methods:[]};
+    try{methods=await api("/api/v1/auth/methods");}catch{}
+    const methodLabels={email:"Email",phone:"Телефон",google:"Google",apple:"Apple"};
+    root.innerHTML='<main class="page">'+profileBackHeader("Настройки аккаунта")+
+      '<section class="card settings-card"><div class="eyebrow">Вход и безопасность</div><h2>Аккаунт</h2>'+
+      '<div class="setting-line"><div><b>Способы входа</b><span class="muted">'+esc((methods.methods||[]).map(x=>methodLabels[x]||x).join(", ")||"Не определено")+'</span></div><button class="secondary" data-route="reset-password">Сменить пароль</button></div>'+
+      (methods.phone?'<div class="setting-line"><div><b>Телефон</b><span class="muted">'+esc(methods.phone)+'</span></div><span class="tag">'+(methods.phone_verified?"Подтверждён":"Не подтверждён")+'</span></div>':'')+
+      '</section>'+
+      '<section class="card settings-card"><div class="eyebrow">Данные и документы</div>'+
+      '<a class="settings-link" href="/privacy" target="_blank" rel="noopener"><b>Политика конфиденциальности</b><span>Открыть ↗</span></a>'+
+      '<a class="settings-link" href="/terms" target="_blank" rel="noopener"><b>Условия использования</b><span>Открыть ↗</span></a>'+
+      '<button class="settings-link button-link" id="export-data"><b>Скачать мои данные</b><span>JSON ↓</span></button>'+
+      '</section>'+
+      '<section class="card settings-card danger-zone"><div class="eyebrow">Опасная зона</div><h2>Удаление аккаунта</h2>'+
+      '<p class="muted">Для защиты от случайного удаления введите <b>DELETE</b>. После запроса аккаунт станет недоступен, а удаление пройдёт по политике хранения данных.</p>'+
+      '<input class="input" id="delete-confirmation" placeholder="Введите DELETE" autocomplete="off">'+
+      '<button class="danger-btn full" id="delete-account" disabled>Удалить аккаунт</button>'+
+      '<div id="settings-status" class="status" hidden></div>'+
+      '</section>'+
+      '<button class="secondary full logout-wide" id="settings-logout">Выйти из аккаунта</button>'+
+    '</main>'+nav("profile");
+    bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
+    document.getElementById("export-data").onclick=async()=>{
+      const btn=document.getElementById("export-data");btn.disabled=true;
+      try{
+        const data=await api("/api/v1/privacy/export");
+        const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");a.href=url;a.download="matchlab-my-data.json";a.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+      }catch(e){inlineStatus("settings-status","Не удалось подготовить данные: "+e.message,true)}
+      btn.disabled=false;
+    };
+    const deletionInput=document.getElementById("delete-confirmation");
+    const deletionBtn=document.getElementById("delete-account");
+    deletionInput.oninput=()=>{deletionBtn.disabled=deletionInput.value.trim()!=="DELETE"};
+    deletionBtn.onclick=async()=>{
+      if(deletionInput.value.trim()!=="DELETE")return;
+      if(!confirm("Удалить аккаунт MatchLab? Это действие запускает процедуру удаления данных."))return;
+      deletionBtn.disabled=true;
+      try{
+        await post("/api/v1/privacy/delete",{confirmation:"DELETE"});
+        state.authenticated=false;state.profile=null;state.onboarding=null;
+        location.hash="";
+        renderAuth("login");
+        status("Запрос на удаление аккаунта принят.");
+      }catch(e){deletionBtn.disabled=false;inlineStatus("settings-status","Не удалось удалить аккаунт: "+e.message,true)}
+    };
+    document.getElementById("settings-logout").onclick=async()=>{
       try{await post("/api/v1/auth/logout",{});}catch{}
-      state.authenticated=false; state.profile=null; state.onboarding=null; location.hash=""; renderAuth("login");
+      state.authenticated=false;state.profile=null;state.onboarding=null;location.hash="";renderAuth("login");
     };
   }
 
   async function renderRoute(force=false) {
     clearPoller();
+    const route=(location.hash||"#home").slice(1).split("?")[0];
+    if(route==="reset-password") return renderPasswordReset();
     if(!state.authenticated){
       try{
         await api("/api/v1/auth/methods");
@@ -857,7 +1474,6 @@
         if(e.status===401){renderAuth("login");return;}
       }
     }
-    const route=(location.hash||"#home").slice(1).split("?")[0];
     if(route==="onboarding") return renderOnboarding(force);
     if(route==="home") return renderHome();
     if(route==="candidate") return renderCandidate();
@@ -865,6 +1481,14 @@
     if(route==="chats") return renderChats();
     if(route==="chat") return renderChat();
     if(route==="profile") return renderProfile();
+    if(route==="profile-edit") return renderProfileEdit();
+    if(route==="preferences") return renderPreferences();
+    if(route==="compatibility") return renderCompatibility();
+    if(route==="photos") return renderPhotos();
+    if(route==="dating-status") return renderDatingStatus();
+    if(route==="notifications") return renderNotifications();
+    if(route==="safety") return renderSafety();
+    if(route==="settings") return renderSettings();
     return setRoute("home");
   }
 

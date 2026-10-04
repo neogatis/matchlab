@@ -85,6 +85,9 @@ class AnalyticsServiceTests(unittest.TestCase):
             db.add(Profile(
                 user_id=user_id,display_name="Complete",dob=date(1997,5,30),
                 gender="M",seek_gender="F",market_id=market.id,city="Алматы",
+                height=183,dating_goal="SERIOUS",children_status="NO_CHILDREN",
+                children_plans="MAYBE",smoking="NO",alcohol="RARE",
+                lifestyle="ACTIVE",readiness_chat="YES",readiness_offline="MAYBE",
                 questionnaire_completed=True,partner_preferences_completed=True,
                 photos_completed=True,
             ))
