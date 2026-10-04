@@ -853,20 +853,29 @@
     });
   }
 
+  function bubbleHtml(m,extraClass=""){
+    const time=(m.created_at||"").slice(11,16);
+    return '<div class="bubble '+(m.is_mine?"mine":"theirs")+(extraClass?" "+extraClass:"")+'" '+(m.client_message_id?'data-client-message="'+esc(m.client_message_id)+'"':'')+'>'+
+      '<div class="bubble-body">'+esc(m.body)+'</div>'+
+      '<span class="bubble-time">'+esc(time)+(extraClass.includes("pending")?" · отправляем…":"")+'</span>'+
+    '</div>';
+  }
+
   async function renderChat() {
     clearPoller();
     const conv=state.currentConversation;
     if(!conv) return setRoute("chats");
     const p=conv.profile||{};
-    root.innerHTML='<main class="page chat-shell" style="padding-bottom:150px">'+
+    root.innerHTML='<main class="page chat-shell">'+
       '<header class="chat-head"><button class="icon-btn" id="chat-back">←</button>'+
         photo(p,"avatar small")+
         '<div class="chat-title"><b>'+esc(p.display_name||conv.other_display_name||"MatchLab")+'</b>'+
         '<span>'+esc(conv.mutual_fit_score??conv.compatibility_score??"")+(conv.mutual_fit_score!=null||conv.compatibility_score!=null?"% совместимость":"")+'</span></div>'+
         '<button class="icon-btn" id="chat-safety">⋯</button></header>'+
+      '<div class="chat-context">💜 Взаимный интерес · можно общаться в своём темпе</div>'+
       '<div id="messages" class="messages"><div class="loader"></div></div>'+
     '</main>'+
-    '<div class="composer"><textarea id="message-input" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message">➤</button></div>'+
+    '<div class="composer"><textarea id="message-input" rows="1" maxlength="4000" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message" aria-label="Отправить">➤</button></div>'+
     nav("chats");
     bindCommon();
     document.getElementById("chat-back").onclick=()=>setRoute("chats");
@@ -875,12 +884,23 @@
       const userId=Number(p.user_id||conv.other_user_id||0);
       if(userId)showSafetyModal(userId,p.display_name||conv.other_display_name||"этого пользователя");
     };
+    const input=document.getElementById("message-input");
     document.getElementById("send-message").onclick=sendCurrentMessage;
+    input.addEventListener("keydown",e=>{
+      if(e.key==="Enter"&&!e.shiftKey){
+        e.preventDefault();
+        sendCurrentMessage();
+      }
+    });
+    input.addEventListener("input",()=>{
+      input.style.height="auto";
+      input.style.height=Math.min(120,input.scrollHeight)+"px";
+    });
     await loadMessages();
-    state.poller=setInterval(loadMessages,5000);
+    state.poller=setInterval(()=>loadMessages(false),4000);
   }
 
-  async function loadMessages() {
+  async function loadMessages(forceScroll=true) {
     const conv=state.currentConversation;
     if(!conv) return;
     try{
@@ -888,31 +908,63 @@
       const items=data.messages||[];
       const box=document.getElementById("messages");
       if(!box) return;
-      box.innerHTML=items.length ? items.map(m=>
-        '<div class="bubble '+(m.is_mine?"mine":"theirs")+'">'+esc(m.body)+
-        '<span class="bubble-time">'+esc((m.created_at||"").slice(11,16))+'</span></div>'
-      ).join("") : '<div class="empty"><div class="emoji">♡</div><h3>Начните разговор</h3><p class="muted">Напишите первое сообщение — без шаблонов, просто по-человечески.</p></div>';
+      const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
+      const pending=[...box.querySelectorAll(".bubble.pending")].map(el=>el.outerHTML);
+      box.innerHTML=(items.length ? items.map(m=>bubbleHtml(m)).join("") : '')+
+        pending.join("")+
+        (!items.length&&!pending.length?'<div class="empty chat-empty"><div class="emoji">♡</div><h3>Начните разговор</h3><p class="muted">Можно начать с того, что вам действительно понравилось в анкете человека.</p></div>':'');
       if(items.length){
         const last=items[items.length-1];
-        await post("/api/v1/chat/read",{conversation_id:conv.conversation_id,through_message_id:last.id}).catch(()=>{});
+        post("/api/v1/chat/read",{conversation_id:conv.conversation_id,through_message_id:last.id}).catch(()=>{});
       }
-      box.scrollTop=box.scrollHeight;
+      if(forceScroll||nearBottom)box.scrollTop=box.scrollHeight;
     }catch(e){}
   }
 
   async function sendCurrentMessage(){
     const input=document.getElementById("message-input");
-    const text=input.value.trim();
-    if(!text||!state.currentConversation) return;
+    const send=document.getElementById("send-message");
+    const text=input?.value.trim();
+    if(!text||!state.currentConversation||!input||!send) return;
+    const clientId=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random());
+    const box=document.getElementById("messages");
     input.value="";
+    input.style.height="auto";
+    const empty=box?.querySelector(".chat-empty");
+    if(empty)empty.remove();
+    if(box){
+      box.insertAdjacentHTML("beforeend",bubbleHtml({
+        body:text,is_mine:true,created_at:new Date().toISOString(),client_message_id:clientId
+      },"pending"));
+      box.scrollTop=box.scrollHeight;
+    }
+    send.disabled=true;
     try{
-      await post("/api/v1/chat/messages",{
+      const response=await post("/api/v1/chat/messages",{
         conversation_id:state.currentConversation.conversation_id,
         body:text,
-        client_message_id:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random())
+        client_message_id:clientId
       });
-      await loadMessages();
-    }catch(e){alert("Не удалось отправить: "+e.message)}
+      const optimistic=box?.querySelector('[data-client-message="'+CSS.escape(clientId)+'"]');
+      if(optimistic){
+        optimistic.classList.remove("pending");
+        const t=optimistic.querySelector(".bubble-time");
+        if(t)t.textContent=((response.message?.created_at||"").slice(11,16)||"сейчас");
+        optimistic.removeAttribute("data-client-message");
+      }
+    }catch(e){
+      const optimistic=box?.querySelector('[data-client-message="'+CSS.escape(clientId)+'"]');
+      if(optimistic){
+        optimistic.classList.remove("pending");
+        optimistic.classList.add("failed");
+        const t=optimistic.querySelector(".bubble-time");
+        if(t)t.textContent="Не отправлено";
+      }
+      input.value=text;
+      input.focus();
+    }finally{
+      send.disabled=false;
+    }
   }
 
 
@@ -927,10 +979,56 @@
   ];
 
   const pick = (id) => document.getElementById(id);
-  const selectHtml = (id, value, options) =>
-    '<select class="input" id="'+id+'">'+options.map(([v,l]) =>
-      '<option value="'+esc(v)+'" '+(String(value||"")===String(v)?"selected":"")+'>'+esc(l)+'</option>'
-    ).join("")+'</select>';
+  const selectHtml = (id, value, options, config={}) => {
+    const current=String(value??"");
+    const required=config.required!==false;
+    const placeholder=config.placeholder||"Выберите вариант";
+    return '<select class="input" id="'+id+'" '+(required?'required':'')+'>'+
+      '<option value="" '+(!current?'selected':'')+' disabled>'+esc(placeholder)+'</option>'+
+      options.map(([v,l]) =>
+        '<option value="'+esc(v)+'" '+(current===String(v)?"selected":"")+'>'+esc(l)+'</option>'
+      ).join("")+
+    '</select>';
+  };
+
+  const importanceHtml = (id, value="") => selectHtml(id,value,[
+    ["HARD","Обязательно"],
+    ["IMPORTANT","Важно"],
+    ["PREFERENCE","Желательно"],
+    ["IGNORE","Не важно"],
+  ],{placeholder:"Насколько это важно?"});
+
+  const MARKET_OPTIONS = [
+    ["KZ-ALA","Алматы"],
+    ["KZ-AST","Астана"],
+    ["KZ-SHY","Шымкент"],
+    ["KZ-KAR","Караганда"],
+    ["KZ-OTHER","Другой город"],
+  ];
+
+  function requireFields(ids,message="Заполните все обязательные поля"){
+    const missing=ids.some(id=>{
+      const el=pick(id);
+      return !el||String(el.value||"").trim()==="";
+    });
+    if(missing){onboardingStatus(message,true);return false}
+    return true;
+  }
+
+  function preferenceCard({key,title,valueHtml,importance="",hint=""}){
+    return '<div class="preference-card" data-pref-card="'+key+'">'+
+      '<div class="preference-card-head"><div><b>'+esc(title)+'</b>'+(hint?'<span>'+esc(hint)+'</span>':'')+'</div></div>'+
+      '<div class="preference-value">'+valueHtml+'</div>'+
+      '<label class="field-label preference-importance">Насколько это важно?'+importanceHtml("importance-"+key,importance)+'</label>'+
+    '</div>';
+  }
+
+  function importanceConfig(key,value){
+    const importance=pick("importance-"+key)?.value||"";
+    if(!importance)throw new Error("Укажите важность критерия «"+key+"»");
+    if(importance==="IGNORE")return {importance:"IGNORE"};
+    return {importance,value};
+  }
 
   function firstIncompleteStep() {
     const c=state.onboarding?.completion||{};
@@ -970,9 +1068,23 @@
     if(!step) return renderWaitlistCompletion();
     if(step==="questionnaire") return renderQuestionnaireStep();
 
+    let preferenceData={values:{}};
+    if(step==="partner_preferences"){
+      try{preferenceData=await api("/api/v1/preferences")}catch{}
+    }
+    const prefValues=preferenceData.values||{};
+    const pref=(key)=>prefValues[key]||{};
+    const prefValue=(key,fallback="")=>pref(key).value??fallback;
+    const prefImportance=(key)=>pref(key).importance||"";
+    const prefFirst=(key)=>{
+      const value=prefValue(key,[]);
+      return Array.isArray(value)&&value.length?value[0]:"";
+    };
+
     let body="";
     if(step==="basic"){
-      body='<div class="onboarding-card"><div class="eyebrow">Начнём с главного</div><h1>Расскажите немного о себе</h1><p class="muted">Это поможет не показывать вам случайных людей.</p>'+
+      const currentMarket=p.market_code||"";
+      body='<div class="onboarding-card"><div class="eyebrow">Начнём с главного</div><h1>Расскажите немного о себе</h1><p class="muted">Никаких ответов по умолчанию — сохраняем только то, что выбрали вы.</p>'+
         '<div class="form-stack">'+
         '<label class="field-label">Имя<input class="input" id="ob-name" value="'+esc(p.display_name||"")+'" placeholder="Как к вам обращаться"></label>'+
         '<label class="field-label">Дата рождения<input class="input" id="ob-dob" type="date" value="'+esc(p.dob||"")+'"></label>'+
@@ -980,24 +1092,26 @@
           '<label class="field-label">Ваш пол'+selectHtml("ob-gender",p.gender,[["M","Мужчина"],["F","Женщина"],["OTHER","Другое"]])+'</label>'+
           '<label class="field-label">Кого ищете'+selectHtml("ob-seek",p.seek_gender,[["F","Женщину"],["M","Мужчину"],["ANY","Не важно"],["OTHER","Другое"]])+'</label>'+
         '</div>'+
+        '<label class="field-label">В каком городе вы сейчас живёте?'+selectHtml("ob-market",currentMarket,MARKET_OPTIONS,{placeholder:"Выберите город"})+'</label>'+
+        '<label class="field-label" id="ob-other-city-wrap" '+(currentMarket==="KZ-OTHER"?"":"hidden")+'>Ваш город<input class="input" id="ob-other-city" maxlength="120" value="'+esc(currentMarket==="KZ-OTHER"?(p.city||""):"")+'" placeholder="Например, Павлодар"></label>'+
         '<button class="primary full" id="ob-save-basic">Продолжить →</button></div></div>';
     } else if(step==="relationship"){
-      body='<div class="onboarding-card"><div class="eyebrow">Статус</div><h1>Вы сейчас в отношениях?</h1><p class="muted">MatchLab показывает анкеты только тем, кто действительно открыт к знакомству.</p>'+
+      body='<div class="onboarding-card"><div class="eyebrow">Статус</div><h1>Вы сейчас в отношениях?</h1><p class="muted">Выберите ответ сами — статус не назначается автоматически.</p>'+
         '<div class="choice-grid" id="relationship-choice">'+
           '<button class="choice-card" data-rel="no"><b>Нет</b><span>Я свободен(на)</span></button>'+
           '<button class="choice-card" data-rel="yes"><b>Да</b><span>Сейчас я в отношениях</span></button>'+
         '</div>'+
         '<div id="openness-block" class="form-stack" hidden><div class="field-label">Насколько вы открыты к знакомствам?</div>'+
-          selectHtml("ob-openness","ACTIVE",[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Пока не уверен(а)"],["NO","Не хочу знакомств"]])+
+          selectHtml("ob-openness","",[["ACTIVE","Активно хочу знакомиться"],["OPEN","Открыт(а), если встречу подходящего человека"],["UNSURE","Пока не уверен(а)"],["NO","Не хочу знакомств"]])+
           '<button class="primary full" id="ob-save-relationship">Продолжить →</button></div></div>';
     } else if(step==="readiness"){
-      body='<div class="onboarding-card"><div class="eyebrow">Готовность</div><h1>Как вам комфортнее начинать знакомство?</h1><p class="muted">Это не влияет на «оценку» — только помогает подобрать людей с похожим темпом.</p>'+
+      body='<div class="onboarding-card"><div class="eyebrow">Готовность</div><h1>Как вам комфортнее начинать знакомство?</h1><p class="muted">Оба ответа нужно выбрать явно.</p>'+
         '<div class="form-stack">'+
         '<label class="field-label">Готовность общаться в чате'+selectHtml("ob-chat",p.readiness_chat,[["YES","Да, готов(а)"],["RATHER_YES","Скорее да"],["LOOK_ONLY","Пока хочу присмотреться"]])+'</label>'+
         '<label class="field-label">Готовность встретиться офлайн'+selectHtml("ob-offline",p.readiness_offline,[["YES","Да"],["MAYBE","Возможно, после общения"],["NO","Пока нет"]])+'</label>'+
         '<button class="primary full" id="ob-save-readiness">Продолжить →</button></div></div>';
     } else if(step==="details"){
-      body='<div class="onboarding-card wide"><div class="eyebrow">О вас</div><h1>Что важно знать для совместимости?</h1><p class="muted">Только то, что реально помогает подобрать человека.</p>'+
+      body='<div class="onboarding-card wide"><div class="eyebrow">О вас</div><h1>Что важно знать для совместимости?</h1><p class="muted">Обязательные пункты не имеют скрытого первого ответа.</p>'+
         '<div class="form-grid">'+
           '<label class="field-label">Рост, см<input class="input" id="ob-height" type="number" min="100" max="250" value="'+esc(p.height||"")+'"></label>'+
           '<label class="field-label">Цель знакомства'+selectHtml("ob-goal",p.dating_goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим, как сложится"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])+'</label>'+
@@ -1006,20 +1120,40 @@
           '<label class="field-label">Курение'+selectHtml("ob-smoking",p.smoking,[["NO","Не курю"],["RARE","Иногда"],["YES","Курю"]])+'</label>'+
           '<label class="field-label">Алкоголь'+selectHtml("ob-alcohol",p.alcohol,[["NO","Не употребляю"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
           '<label class="field-label">Образ жизни'+selectHtml("ob-lifestyle",p.lifestyle,[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
-          '<label class="field-label">Религия — необязательно<input class="input" id="ob-religion" value="'+esc(p.religion||"")+'" placeholder="Например, ислам"></label>'+
+          '<label class="field-label">Религия — необязательно<input class="input" id="ob-religion" value="'+esc(p.religion||"")+'" placeholder="Можно не указывать"></label>'+
         '</div>'+
         '<label class="field-label">Коротко о себе<textarea class="input textarea" id="ob-bio" maxlength="2000" placeholder="Чем вы живёте, что любите, какой человек вам близок">'+esc(p.bio||"")+'</textarea></label>'+
         '<button class="primary full" id="ob-save-details">Перейти к анкете →</button></div>';
     } else if(step==="partner_preferences"){
-      const seek=p.seek_gender||"ANY";
-      body='<div class="onboarding-card wide"><div class="eyebrow">Ваш человек</div><h1>Кого вы хотите встретить?</h1><p class="muted">Не делаем бесконечный фильтр. Только критерии, которые действительно важны.</p>'+
-        '<div class="form-grid">'+
-          '<label class="field-label">Возраст от<input class="input" id="pref-age-min" type="number" min="18" max="100" value="23"></label>'+
-          '<label class="field-label">Возраст до<input class="input" id="pref-age-max" type="number" min="18" max="100" value="38"></label>'+
-          '<label class="field-label">Расстояние, км<input class="input" id="pref-distance" type="number" min="1" max="1000" value="100"></label>'+
-          '<label class="field-label">Рост от<input class="input" id="pref-height-min" type="number" min="100" max="250" value="150"></label>'+
-          '<label class="field-label">Рост до<input class="input" id="pref-height-max" type="number" min="100" max="250" value="200"></label>'+
-          '<label class="field-label">Цель знакомства'+selectHtml("pref-goal","SERIOUS",[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["ANY","Любая"]])+'</label>'+
+      const age=prefValue("age",{});
+      const height=prefValue("height",{});
+      const distance=prefValue("distance_km",{});
+      const marketValue=prefFirst("market");
+      body='<div class="onboarding-card wide preferences-onboarding"><div class="eyebrow">Ваш человек</div><h1>Кого вы хотите встретить?</h1>'+
+        '<p class="muted">Для каждого критерия сначала выберите значение, а затем насколько оно важно. «Не важно» полностью исключает критерий из расчёта.</p>'+
+        '<div class="preference-grid">'+
+          preferenceCard({key:"age",title:"Возраст партнёра",importance:prefImportance("age"),valueHtml:
+            '<div class="range-pair"><input class="input" id="pref-age-min" type="number" min="18" max="100" value="'+esc(age.min??"")+'" placeholder="От"><input class="input" id="pref-age-max" type="number" min="18" max="100" value="'+esc(age.max??"")+'" placeholder="До"></div>'})+
+          preferenceCard({key:"gender",title:"Кого вы ищете",importance:prefImportance("gender"),valueHtml:
+            selectHtml("pref-gender",prefFirst("gender")||p.seek_gender,[["F","Женщину"],["M","Мужчину"],["OTHER","Другой пол"]],{placeholder:"Выберите"})})+
+          preferenceCard({key:"market",title:"Город партнёра",importance:prefImportance("market"),valueHtml:
+            selectHtml("pref-market",marketValue,MARKET_OPTIONS.slice(0,4),{placeholder:"Выберите город"})})+
+          preferenceCard({key:"distance_km",title:"Максимальное расстояние",hint:"Используется как примерное ограничение между городами",importance:prefImportance("distance_km"),valueHtml:
+            '<input class="input" id="pref-distance" type="number" min="1" max="1000" value="'+esc(distance.max??"")+'" placeholder="Например, 100 км">'})+
+          preferenceCard({key:"dating_goal",title:"Цель знакомства",importance:prefImportance("dating_goal"),valueHtml:
+            selectHtml("pref-goal",prefFirst("dating_goal"),[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])})+
+          preferenceCard({key:"children_status",title:"Наличие детей",importance:prefImportance("children_status"),valueHtml:
+            selectHtml("pref-children",prefFirst("children_status"),[["NO_CHILDREN","Без детей"],["HAS_CHILDREN","Есть дети"]])})+
+          preferenceCard({key:"children_plans",title:"Планы на детей",importance:prefImportance("children_plans"),valueHtml:
+            selectHtml("pref-plans",prefFirst("children_plans"),[["WANTS","Хочет"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет"]])})+
+          preferenceCard({key:"smoking",title:"Курение",importance:prefImportance("smoking"),valueHtml:
+            selectHtml("pref-smoking",prefFirst("smoking"),[["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])})+
+          preferenceCard({key:"alcohol",title:"Алкоголь",importance:prefImportance("alcohol"),valueHtml:
+            selectHtml("pref-alcohol",prefFirst("alcohol"),[["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])})+
+          preferenceCard({key:"lifestyle",title:"Образ жизни",importance:prefImportance("lifestyle"),valueHtml:
+            selectHtml("pref-lifestyle",prefFirst("lifestyle"),[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])})+
+          preferenceCard({key:"height",title:"Рост партнёра",importance:prefImportance("height"),valueHtml:
+            '<div class="range-pair"><input class="input" id="pref-height-min" type="number" min="100" max="250" value="'+esc(height.min??"")+'" placeholder="От"><input class="input" id="pref-height-max" type="number" min="100" max="250" value="'+esc(height.max??"")+'" placeholder="До"></div>'})+
         '</div>'+
         '<button class="primary full" id="ob-save-preferences">Сохранить критерии →</button></div>';
     } else {
@@ -1035,29 +1169,47 @@
     pick("onboarding-exit").onclick=()=>setRoute("home");
 
     if(step==="basic"){
+      const market=pick("ob-market");
+      const otherWrap=pick("ob-other-city-wrap");
+      market.onchange=()=>{otherWrap.hidden=market.value!=="KZ-OTHER"};
       pick("ob-save-basic").onclick=async()=>{
+        if(!requireFields(["ob-name","ob-dob","ob-gender","ob-seek","ob-market"]))return;
+        if(market.value==="KZ-OTHER"&&!String(pick("ob-other-city").value||"").trim()){
+          return onboardingStatus("Укажите ваш город",true);
+        }
         try{
           onboardingStatus("Сохраняем…");
-          await post("/api/v1/profile/basic",{display_name:pick("ob-name").value.trim(),dob:pick("ob-dob").value,gender:pick("ob-gender").value,seek_gender:pick("ob-seek").value,market_code:"KZ-ALA",preferred_locale:"ru-KZ"});
+          await post("/api/v1/profile/basic",{
+            display_name:pick("ob-name").value.trim(),
+            dob:pick("ob-dob").value,
+            gender:pick("ob-gender").value,
+            seek_gender:pick("ob-seek").value,
+            market_code:market.value,
+            city:market.value==="KZ-OTHER"?pick("ob-other-city").value.trim():"",
+            preferred_locale:"ru-KZ"
+          });
           await loadMe(); renderOnboarding();
         }catch(e){onboardingStatus("Проверьте данные: "+e.message,true)}
       };
     } else if(step==="relationship"){
-      let inRelationship=false;
+      let relationshipAnswer=null;
       document.querySelectorAll("[data-rel]").forEach(btn=>btn.onclick=()=>{
-        inRelationship=btn.dataset.rel==="yes";
+        relationshipAnswer=btn.dataset.rel;
         document.querySelectorAll("[data-rel]").forEach(x=>x.classList.toggle("selected",x===btn));
         pick("openness-block").hidden=false;
-        if(inRelationship) pick("ob-openness").value="NO";
+        pick("ob-openness").value="";
       });
       pick("ob-save-relationship").onclick=async()=>{
+        if(relationshipAnswer===null)return onboardingStatus("Выберите, состоите ли вы сейчас в отношениях",true);
+        if(!requireFields(["ob-openness"]))return;
         try{
-          await post("/api/v1/profile/relationship",{in_relationship:inRelationship,openness:pick("ob-openness").value});
+          await post("/api/v1/profile/relationship",{in_relationship:relationshipAnswer==="yes",openness:pick("ob-openness").value});
           await loadMe(); renderOnboarding();
         }catch(e){onboardingStatus(e.message,true)}
       };
     } else if(step==="readiness"){
       pick("ob-save-readiness").onclick=async()=>{
+        if(!requireFields(["ob-chat","ob-offline"]))return;
         try{
           await post("/api/v1/profile/readiness",{chat:pick("ob-chat").value,offline:pick("ob-offline").value});
           await loadMe(); renderOnboarding();
@@ -1065,34 +1217,64 @@
       };
     } else if(step==="details"){
       pick("ob-save-details").onclick=async()=>{
+        if(!requireFields(["ob-height","ob-goal","ob-children","ob-children-plans","ob-smoking","ob-alcohol","ob-lifestyle"]))return;
         try{
           await post("/api/v1/profile/details",{height:Number(pick("ob-height").value),dating_goal:pick("ob-goal").value,children_status:pick("ob-children").value,children_plans:pick("ob-children-plans").value,smoking:pick("ob-smoking").value,alcohol:pick("ob-alcohol").value,lifestyle:pick("ob-lifestyle").value,bio:pick("ob-bio").value.trim(),religion:pick("ob-religion").value.trim(),nationality:""});
           await loadMe(); renderOnboarding();
         }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
       };
     } else if(step==="partner_preferences"){
+      const valueOrIgnore=(key,id,wrap=v=>v)=>{
+        const importance=pick("importance-"+key).value;
+        if(!importance)throw new Error("Выберите важность: "+key);
+        if(importance==="IGNORE")return {importance:"IGNORE"};
+        const raw=pick(id)?.value;
+        if(raw==null||String(raw).trim()==="")throw new Error("Выберите значение: "+key);
+        return {importance,value:wrap(raw)};
+      };
       pick("ob-save-preferences").onclick=async()=>{
-        const seek=(state.onboarding?.profile?.seek_gender||"ANY");
-        const gender=seek==="ANY"?["M","F","OTHER"]:[seek];
-        const goal=pick("pref-goal").value;
-        const prefs={
-          age:{importance:"HARD",value:{min:Number(pick("pref-age-min").value),max:Number(pick("pref-age-max").value)}},
-          gender:{importance:"HARD",value:gender},
-          market:{importance:"HARD",value:["KZ-ALA"]},
-          distance_km:{importance:"IMPORTANT",value:{max:Number(pick("pref-distance").value)}},
-          dating_goal:{importance:"IMPORTANT",value:goal==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goal]},
-          children_status:{importance:"IGNORE"},
-          children_plans:{importance:"IGNORE"},
-          smoking:{importance:"IGNORE"},
-          alcohol:{importance:"IGNORE"},
-          lifestyle:{importance:"IGNORE"},
-          height:{importance:"PREFERENCE",value:{min:Number(pick("pref-height-min").value),max:Number(pick("pref-height-max").value)}}
-        };
         try{
+          const ageImportance=pick("importance-age").value;
+          if(!ageImportance)throw new Error("Выберите важность возраста");
+          let ageConfig={importance:"IGNORE"};
+          if(ageImportance!=="IGNORE"){
+            const min=Number(pick("pref-age-min").value),max=Number(pick("pref-age-max").value);
+            if(!min||!max||min<18||max<min||max>100)throw new Error("Проверьте возрастной диапазон");
+            ageConfig={importance:ageImportance,value:{min,max}};
+          }
+          const heightImportance=pick("importance-height").value;
+          if(!heightImportance)throw new Error("Выберите важность роста");
+          let heightConfig={importance:"IGNORE"};
+          if(heightImportance!=="IGNORE"){
+            const min=Number(pick("pref-height-min").value),max=Number(pick("pref-height-max").value);
+            if(!min||!max||min<100||max<min||max>250)throw new Error("Проверьте диапазон роста");
+            heightConfig={importance:heightImportance,value:{min,max}};
+          }
+          const distanceImportance=pick("importance-distance_km").value;
+          if(!distanceImportance)throw new Error("Выберите важность расстояния");
+          let distanceConfig={importance:"IGNORE"};
+          if(distanceImportance!=="IGNORE"){
+            const max=Number(pick("pref-distance").value);
+            if(!max||max<1||max>1000)throw new Error("Проверьте максимальное расстояние");
+            distanceConfig={importance:distanceImportance,value:{max}};
+          }
+          const prefs={
+            age:ageConfig,
+            gender:valueOrIgnore("gender","pref-gender",v=>[v]),
+            market:valueOrIgnore("market","pref-market",v=>[v]),
+            distance_km:distanceConfig,
+            dating_goal:valueOrIgnore("dating_goal","pref-goal",v=>[v]),
+            children_status:valueOrIgnore("children_status","pref-children",v=>[v]),
+            children_plans:valueOrIgnore("children_plans","pref-plans",v=>[v]),
+            smoking:valueOrIgnore("smoking","pref-smoking",v=>[v]),
+            alcohol:valueOrIgnore("alcohol","pref-alcohol",v=>[v]),
+            lifestyle:valueOrIgnore("lifestyle","pref-lifestyle",v=>[v]),
+            height:heightConfig
+          };
           onboardingStatus("Сохраняем критерии…");
           await post("/api/v1/preferences",{preferences:prefs});
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
+        }catch(e){onboardingStatus(e.message||"Проверьте критерии",true)}
       };
     } else {
       pick("ob-finish-later").onclick=()=>setRoute("home");
@@ -1130,7 +1312,7 @@
         '<p class="muted">'+esc(waitlist.message||"Ваш профиль сохранён. Мы сообщим, когда подбор станет доступен.")+'</p>'+
         '<div class="waitlist-summary">'+
           '<div><b>100%</b><span>анкета заполнена</span></div>'+
-          '<div><b>'+esc(p.market_code==="KZ-ALA"?"Алматы":p.market_code||"Алматы")+'</b><span>город запуска</span></div>'+
+          '<div><b>'+esc(p.city||"Город не указан")+'</b><span>ваш город</span></div>'+
           '<div><b>'+esc(ready?"Готов":"Проверяем")+'</b><span>статус профиля</span></div>'+
         '</div>'+
         '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
@@ -1349,35 +1531,30 @@
     let data={values:{}};
     try{data=await api("/api/v1/preferences");}catch{}
     const values=data.values||{};
-    const val=(key,fallback)=>values[key]?.value??fallback;
-    const age=val("age",{min:23,max:38});
-    const height=val("height",{min:150,max:200});
-    const distance=val("distance_km",{max:100});
-    const first=(key,fallback)=>{
-      const v=val(key,[fallback]);
-      return Array.isArray(v)&&v.length?v[0]:fallback;
+    const pref=(key)=>values[key]||{};
+    const val=(key,fallback="")=>pref(key).value??fallback;
+    const imp=(key)=>pref(key).importance||"";
+    const first=(key)=>{
+      const v=val(key,[]);
+      return Array.isArray(v)&&v.length?v[0]:"";
     };
-    const genderValues=val("gender",[]);
-    const gender=Array.isArray(genderValues)&&genderValues.length===1?genderValues[0]:"ANY";
-    const goalValues=val("dating_goal",[]);
-    const goal=Array.isArray(goalValues)&&goalValues.length===1?goalValues[0]:"ANY";
+    const age=val("age",{}),height=val("height",{}),distance=val("distance_km",{});
 
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Кого я ищу")+
-      '<section class="card settings-card"><div class="eyebrow">Критерии партнёра</div><h2>Показывать только действительно подходящих людей</h2>'+
-      '<p class="muted">Жёсткие критерии отсекают неподходящих кандидатов, остальные влияют на ранжирование совместимости.</p>'+
-      '<div class="form-grid">'+
-        '<label class="field-label">Возраст от<input class="input" id="pref-edit-age-min" type="number" min="18" max="100" value="'+esc(age.min??23)+'"></label>'+
-        '<label class="field-label">Возраст до<input class="input" id="pref-edit-age-max" type="number" min="18" max="100" value="'+esc(age.max??38)+'"></label>'+
-        '<label class="field-label">Кого ищу'+selectHtml("pref-edit-gender",gender,[["F","Женщину"],["M","Мужчину"],["OTHER","Другое"],["ANY","Не важно"]])+'</label>'+
-        '<label class="field-label">Максимальное расстояние, км<input class="input" id="pref-edit-distance" type="number" min="1" max="1000" value="'+esc(distance.max??100)+'"></label>'+
-        '<label class="field-label">Рост от<input class="input" id="pref-edit-height-min" type="number" min="100" max="250" value="'+esc(height.min??150)+'"></label>'+
-        '<label class="field-label">Рост до<input class="input" id="pref-edit-height-max" type="number" min="100" max="250" value="'+esc(height.max??200)+'"></label>'+
-        '<label class="field-label">Цель знакомства'+selectHtml("pref-edit-goal",goal,[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["CHAT","Общение"],["ANY","Не важно"]])+'</label>'+
-        '<label class="field-label">Дети'+selectHtml("pref-edit-children",first("children_status","ANY"),[["ANY","Не важно"],["NO_CHILDREN","Без детей"],["HAS_CHILDREN","Есть дети"]])+'</label>'+
-        '<label class="field-label">Планы на детей'+selectHtml("pref-edit-plans",first("children_plans","ANY"),[["ANY","Не важно"],["WANTS","Хочет"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет"]])+'</label>'+
-        '<label class="field-label">Курение'+selectHtml("pref-edit-smoking",first("smoking","ANY"),[["ANY","Не важно"],["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])+'</label>'+
-        '<label class="field-label">Алкоголь'+selectHtml("pref-edit-alcohol",first("alcohol","ANY"),[["ANY","Не важно"],["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])+'</label>'+
-        '<label class="field-label">Образ жизни'+selectHtml("pref-edit-lifestyle",first("lifestyle","ANY"),[["ANY","Не важно"],["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])+'</label>'+
+      '<section class="card settings-card preferences-editor"><div class="eyebrow">Критерии партнёра</div><h2>Что для вас действительно важно?</h2>'+
+      '<p class="muted">Вы сами определяете силу каждого критерия. «Не важно» не фильтрует людей и вообще не участвует в проценте.</p>'+
+      '<div class="preference-grid">'+
+        preferenceCard({key:"age",title:"Возраст партнёра",importance:imp("age"),valueHtml:'<div class="range-pair"><input class="input" id="pref-edit-age-min" type="number" min="18" max="100" value="'+esc(age.min??"")+'" placeholder="От"><input class="input" id="pref-edit-age-max" type="number" min="18" max="100" value="'+esc(age.max??"")+'" placeholder="До"></div>'})+
+        preferenceCard({key:"gender",title:"Кого ищу",importance:imp("gender"),valueHtml:selectHtml("pref-edit-gender",first("gender"),[["F","Женщину"],["M","Мужчину"],["OTHER","Другой пол"]])})+
+        preferenceCard({key:"market",title:"Город партнёра",importance:imp("market"),valueHtml:selectHtml("pref-edit-market",first("market"),MARKET_OPTIONS.slice(0,4),{placeholder:"Выберите город"})})+
+        preferenceCard({key:"distance_km",title:"Максимальное расстояние",hint:"Ориентир между городами, не геолокация человека",importance:imp("distance_km"),valueHtml:'<input class="input" id="pref-edit-distance" type="number" min="1" max="1000" value="'+esc(distance.max??"")+'" placeholder="км">'})+
+        preferenceCard({key:"dating_goal",title:"Цель знакомства",importance:imp("dating_goal"),valueHtml:selectHtml("pref-edit-goal",first("dating_goal"),[["SERIOUS","Серьёзные отношения"],["FAMILY","Семья"],["SEE","Посмотрим"],["CHAT","Общение"],["UNKNOWN","Пока не знаю"]])})+
+        preferenceCard({key:"children_status",title:"Дети",importance:imp("children_status"),valueHtml:selectHtml("pref-edit-children",first("children_status"),[["NO_CHILDREN","Без детей"],["HAS_CHILDREN","Есть дети"]])})+
+        preferenceCard({key:"children_plans",title:"Планы на детей",importance:imp("children_plans"),valueHtml:selectHtml("pref-edit-plans",first("children_plans"),[["WANTS","Хочет"],["MAYBE","Возможно"],["DOES_NOT_WANT","Не хочет"]])})+
+        preferenceCard({key:"smoking",title:"Курение",importance:imp("smoking"),valueHtml:selectHtml("pref-edit-smoking",first("smoking"),[["NO","Не курит"],["RARE","Иногда"],["YES","Курит"]])})+
+        preferenceCard({key:"alcohol",title:"Алкоголь",importance:imp("alcohol"),valueHtml:selectHtml("pref-edit-alcohol",first("alcohol"),[["NO","Не употребляет"],["RARE","Редко"],["MODERATE","Умеренно"],["YES","Регулярно"]])})+
+        preferenceCard({key:"lifestyle",title:"Образ жизни",importance:imp("lifestyle"),valueHtml:selectHtml("pref-edit-lifestyle",first("lifestyle"),[["CALM","Спокойный"],["BALANCED","Сбалансированный"],["ACTIVE","Активный"],["VERY_ACTIVE","Очень активный"]])})+
+        preferenceCard({key:"height",title:"Рост партнёра",importance:imp("height"),valueHtml:'<div class="range-pair"><input class="input" id="pref-edit-height-min" type="number" min="100" max="250" value="'+esc(height.min??"")+'" placeholder="От"><input class="input" id="pref-edit-height-max" type="number" min="100" max="250" value="'+esc(height.max??"")+'" placeholder="До"></div>'})+
       '</div>'+
       '<button class="primary full" id="save-preferences-edit">Сохранить критерии</button>'+
       '<div id="preferences-status" class="status" hidden></div></section>'+
@@ -1385,30 +1562,54 @@
     bindCommon();
     document.getElementById("profile-back").onclick=()=>setRoute("profile");
     document.getElementById("save-preferences-edit").onclick=async()=>{
-      const g=document.getElementById("pref-edit-gender").value;
-      const goalValue=document.getElementById("pref-edit-goal").value;
-      const prefs={
-        age:{importance:"HARD",value:{min:Number(document.getElementById("pref-edit-age-min").value),max:Number(document.getElementById("pref-edit-age-max").value)}},
-        gender:{importance:"HARD",value:g==="ANY"?["M","F","OTHER"]:[g]},
-        market:{importance:"HARD",value:["KZ-ALA"]},
-        distance_km:{importance:"IMPORTANT",value:{max:Number(document.getElementById("pref-edit-distance").value)}},
-        dating_goal:{importance:"IMPORTANT",value:goalValue==="ANY"?["SERIOUS","FAMILY","SEE","CHAT","UNKNOWN"]:[goalValue]},
-        children_status:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-children").value]},
-        children_plans:{importance:"IMPORTANT",value:[document.getElementById("pref-edit-plans").value]},
-        smoking:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-smoking").value]},
-        alcohol:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-alcohol").value]},
-        lifestyle:{importance:"PREFERENCE",value:[document.getElementById("pref-edit-lifestyle").value]},
-        height:{importance:"PREFERENCE",value:{min:Number(document.getElementById("pref-edit-height-min").value),max:Number(document.getElementById("pref-edit-height-max").value)}}
-      };
-      const btn=document.getElementById("save-preferences-edit");
-      btn.disabled=true;inlineStatus("preferences-status","Сохраняем…");
+      const button=document.getElementById("save-preferences-edit");
       try{
+        const simple=(key,id)=>{
+          const importance=pick("importance-"+key).value;
+          if(!importance)throw new Error("Выберите важность для каждого критерия");
+          if(importance==="IGNORE")return {importance:"IGNORE"};
+          const v=pick(id).value;
+          if(!v)throw new Error("Заполните значение для критерия");
+          return {importance,value:[v]};
+        };
+        const range=(key,minId,maxId,minAllowed,maxAllowed)=>{
+          const importance=pick("importance-"+key).value;
+          if(!importance)throw new Error("Выберите важность для каждого критерия");
+          if(importance==="IGNORE")return {importance:"IGNORE"};
+          const min=Number(pick(minId).value),max=Number(pick(maxId).value);
+          if(!min||!max||min<minAllowed||max>maxAllowed||max<min)throw new Error("Проверьте диапазон "+key);
+          return {importance,value:{min,max}};
+        };
+        const maxPref=(key,id)=>{
+          const importance=pick("importance-"+key).value;
+          if(!importance)throw new Error("Выберите важность для каждого критерия");
+          if(importance==="IGNORE")return {importance:"IGNORE"};
+          const max=Number(pick(id).value);
+          if(!max||max<1||max>1000)throw new Error("Проверьте расстояние");
+          return {importance,value:{max}};
+        };
+        const prefs={
+          age:range("age","pref-edit-age-min","pref-edit-age-max",18,100),
+          gender:simple("gender","pref-edit-gender"),
+          market:simple("market","pref-edit-market"),
+          distance_km:maxPref("distance_km","pref-edit-distance"),
+          dating_goal:simple("dating_goal","pref-edit-goal"),
+          children_status:simple("children_status","pref-edit-children"),
+          children_plans:simple("children_plans","pref-edit-plans"),
+          smoking:simple("smoking","pref-edit-smoking"),
+          alcohol:simple("alcohol","pref-edit-alcohol"),
+          lifestyle:simple("lifestyle","pref-edit-lifestyle"),
+          height:range("height","pref-edit-height-min","pref-edit-height-max",100,250)
+        };
+        button.disabled=true;inlineStatus("preferences-status","Сохраняем…");
         await post("/api/v1/preferences",{preferences:prefs});
         await loadMe();
-        btn.disabled=false;inlineStatus("preferences-status","Критерии сохранены ✓");
-      }catch(e){btn.disabled=false;inlineStatus("preferences-status","Не удалось сохранить: "+e.message,true)}
+        inlineStatus("preferences-status","Критерии сохранены ✓");
+      }catch(e){inlineStatus("preferences-status",e.message||"Не удалось сохранить критерии",true)}
+      finally{button.disabled=false}
     };
   }
+
 
   async function renderCompatibility(){
     clearPoller(); loading("profile");
