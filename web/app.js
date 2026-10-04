@@ -1,5 +1,6 @@
 (() => {
   const root = document.getElementById("app");
+  const HERO_IMAGE = "https://images.unsplash.com/photo-1776266099714-2177bb456209?auto=format&fit=crop&fm=jpg&q=86&w=2400";
   const state = {
     authenticated: false,
     profile: null,
@@ -355,7 +356,7 @@
     root.innerHTML = '<main class="page">' +
       topbar() +
       '<section class="hero">' +
-        '<img src="/web/hero.jpg" alt="Счастливая пара">' +
+        '<img src="https://images.unsplash.com/photo-1776266099714-2177bb456209?auto=format&fit=crop&fm=jpg&q=86&w=2400" alt="Счастливая пара">' +
         '<div class="hero-copy"><div class="eyebrow" style="color:#ffd9dd">Больше, чем совпадения</div>' +
         '<h1>Не выбирай из всех.<br>Найди подходящего.</h1>' +
         '<p>Совместимость, общие ценности и серьёзные намерения.</p></div>' +
