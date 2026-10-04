@@ -145,7 +145,7 @@ def set_preference(
     spec = PREFERENCE_CATALOG[key]
     if (
         importance != "IGNORE"
-        and spec["kind"] == "multi"
+        and spec["kind"] in {"multi", "multi_text"}
         and isinstance(value, list)
         and any(str(item).strip().upper() == "ANY" for item in value)
     ):
