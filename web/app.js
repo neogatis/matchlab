@@ -284,7 +284,8 @@
       if (password && password.length < 10) return status("Пароль — минимум 10 символов.", true);
       status("Проверяем код…");
       try {
-        await post("/api/v1/auth/phone/verify",{phone,code,...(password?{password}:{})});
+        const a=attributionPayload();
+        await post("/api/v1/auth/phone/verify",{phone,code,referral_code:a.referral_code||"",attribution:a,...(password?{password}:{})});
         await afterAuth();
       } catch(e) { status("Код неверный или истёк.", true); }
     };
