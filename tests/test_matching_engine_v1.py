@@ -182,6 +182,25 @@ class MatchingEngineTests(unittest.TestCase):
             self.assertFalse(result["eligible"])
             self.assertEqual(result["reason"],"source_contact_unverified")
 
+    def test_configured_gender_ignore_overrides_legacy_seek_gender_filter(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="M",seek_gender="ANY")
+            self.pref(db,a,"gender","IGNORE")
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertTrue(result["eligible"],result)
+
+    def test_configured_gender_hard_still_filters(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="ANY")
+            b=self.add_user(db,email="b@example.com",gender="M",seek_gender="ANY")
+            self.pref(db,a,"gender","HARD",values=["F"])
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertFalse(result["eligible"])
+            self.assertEqual(result["reason"],"source_hard:gender")
+
     def test_one_sided_hard_age_conflict_blocks_pair(self):
         with Session(self.engine) as db:
             a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F",dob=date(1997,1,1))
