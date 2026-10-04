@@ -1039,3 +1039,29 @@ body{background:var(--bg)}
 @media(max-width:760px){
   .auth-hero-photo{object-position:58% center!important}
 }
+
+
+/* AUTH HERO NO-CROP FIX V16 */
+.auth-screen{
+  background:
+    linear-gradient(rgba(23,16,32,.28),rgba(23,16,32,.28)),
+    url("/web/hero.jpg?v=16") center center/cover no-repeat fixed!important;
+}
+.auth-hero-photo{
+  object-fit:contain!important;
+  object-position:center center!important;
+  width:100vw!important;
+  height:100vh!important;
+  max-width:none!important;
+  max-height:none!important;
+}
+@media(max-width:760px){
+  .auth-screen{
+    background-position:center center!important;
+    background-attachment:scroll!important;
+  }
+  .auth-hero-photo{
+    object-fit:contain!important;
+    object-position:center center!important;
+  }
+}
