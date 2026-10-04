@@ -426,17 +426,8 @@
   function compatibilityReason(candidate) {
     const scores = candidate.category_scores || {};
     const entries = Object.entries(scores).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,3);
-    const labels = {
-      values:"Ценности",
-      relationship:"Отношения",
-      communication:"Общение",
-      lifestyle:"Образ жизни",
-      personality:"Характер",
-      intimacy:"Близость",
-      conflict:"Конфликты",
-    };
     return entries.map(([key,value]) =>
-      '<span class="tag">' + esc(labels[key] || key) + ' · ' + esc(value) + '%</span>'
+      '<span class="tag">' + esc(compatibilityMeta(key).label) + ' · ' + esc(value) + '%</span>'
     ).join("") || '<span class="tag">Совместимые критерии</span>';
   }
 
@@ -517,11 +508,8 @@
 
   function compatibilityMeta(key) {
     if (COMPATIBILITY_META[key]) return COMPATIBILITY_META[key];
-    const label = String(key || "Совместимость")
-      .replaceAll("_"," ")
-      .replace(/\b\w/g, ch => ch.toUpperCase());
     return {
-      label,icon:"♡",
+      label:"Дополнительный фактор",icon:"♡",
       high:"очень близко",mid:"много общего",soft:"есть точки совпадения",
       highCopy:"По этому параметру ваши ответы очень близки.",
       midCopy:"По этому параметру у вас много общего.",
