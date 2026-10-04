@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.analytics.events import EVENT_REGISTRATION, track_once
+from app.analytics.events import EVENT_REGISTRATION, EVENT_REGISTRATION_COMPLETED, track_once
 from app.db.models import AuthIdentity, MarketingAttribution, User
 from .service import AuthError, hash_password, normalize_email
 
@@ -149,6 +149,7 @@ def _new_identity_user(
     *,
     identity: VerifiedIdentity,
     referral_code: str | None = None,
+    attribution: dict | None = None,
 ) -> User:
     email = identity.email if identity.email_verified and identity.email else _synthetic_email(
         identity.provider, identity.subject
@@ -167,18 +168,24 @@ def _new_identity_user(
         db.rollback()
         raise OAuthError("identity_account_conflict") from exc
 
+    attribution = attribution or {}
     db.add(
         MarketingAttribution(
             user_id=user.id,
+            utm_source=str(attribution.get("utm_source", ""))[:255],
+            utm_medium=str(attribution.get("utm_medium", ""))[:255],
+            utm_campaign=str(attribution.get("utm_campaign", ""))[:255],
+            utm_content=str(attribution.get("utm_content", ""))[:255],
+            utm_term=str(attribution.get("utm_term", ""))[:255],
             referral_input=(referral_code or "").strip()[:255],
         )
     )
-    track_once(
-        db,
-        event_type=EVENT_REGISTRATION,
-        user_id=user.id,
-        metadata={"channel": identity.provider.lower()},
-    )
+    metadata = {
+        "channel": identity.provider.lower(),
+        "platform": str((attribution or {}).get("platform", "web")),
+    }
+    track_once(db, event_type=EVENT_REGISTRATION, user_id=user.id, metadata=metadata)
+    track_once(db, event_type=EVENT_REGISTRATION_COMPLETED, user_id=user.id, metadata=metadata)
     return user
 
 
@@ -187,6 +194,7 @@ def login_or_register_identity(
     *,
     identity: VerifiedIdentity,
     referral_code: str | None = None,
+    attribution: dict | None = None,
 ) -> User:
     existing_identity = db.execute(
         select(AuthIdentity).where(
@@ -213,6 +221,7 @@ def login_or_register_identity(
             db,
             identity=identity,
             referral_code=referral_code,
+            attribution=attribution,
         )
 
     db.add(
