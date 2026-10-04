@@ -110,7 +110,7 @@
         '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
         '<div class="auth-tagline">' +
           '<div class="eyebrow">Знакомства по совместимости</div>' +
-          '<h1>Не выбирай из всех.<br>Найди подходящего.</h1>' +
+          '<h1>Не выбирай из всех.<br><span style="color:#ff5d6c">Найди подходящего.</span></h1>' +
           '<p>Общие ценности, реальные люди и серьёзные намерения.</p>' +
         '</div>' +
         '<div class="auth-panel">' +
