@@ -1881,10 +1881,17 @@ class MatchLabHandler(BaseHTTPRequestHandler):
 
             if method == "POST" and path == f"{API_PREFIX}/profile/relationship":
                 body = self._body()
+                in_relationship = body.get("in_relationship")
+                if not isinstance(in_relationship, bool):
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid_relationship_answer",
+                        "in_relationship must be selected explicitly",
+                    )
                 row = set_relationship_state(
                     db,
                     user_id=principal.user_id,
-                    in_relationship=bool(body.get("in_relationship")),
+                    in_relationship=in_relationship,
                     openness=str(body.get("openness", "")),
                     source="http",
                 )
@@ -2385,6 +2392,10 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         db,
                         user_id=other_id,
                     )
+                    test_meta = _test_profile_meta(db, other_id)
+                    if test_meta is not None and _test_viewer_enabled(principal.user_id):
+                        item["profile"]["photos"] = [test_meta["photo"]]
+                        item["profile"]["is_test_profile"] = True
                     match = db.get(Match, int(item["match_id"]))
                     if match is not None:
                         item["compatibility_score"] = match.compatibility_score
