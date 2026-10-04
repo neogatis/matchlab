@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics.events import EVENT_WAITLIST_JOINED, track_once
 from app.db.models import (
+    Market,
     Profile,
     QuestionnaireAnswer,
     QuestionnaireQuestion,
