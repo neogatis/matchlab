@@ -1,0 +1,11 @@
+{
+  "name":"MatchLab",
+  "short_name":"MatchLab",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#fff9f6",
+  "theme_color":"#fff9f6",
+  "icons":[
+    {"src":"/web/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
