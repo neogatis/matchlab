@@ -50,7 +50,10 @@ class PrelaunchServiceTests(unittest.TestCase):
             ]
 
     def add_ready_user(self,db,email,*,gender="M",seek_gender="ANY",answer=3):
-        user=User(email=email,password_hash="x",referral_code=email.split("@")[0],status="ACTIVE")
+        user=User(
+            email=email,password_hash="x",referral_code=email.split("@")[0],status="ACTIVE",
+            email_verified_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        )
         db.add(user); db.flush()
         db.add(Profile(
             user_id=user.id,display_name=email.split("@")[0],dob=date(1997,5,30),
@@ -97,6 +100,36 @@ class PrelaunchServiceTests(unittest.TestCase):
             self.assertTrue(state["ready"])
             self.assertEqual(state["state"],"WAITLIST")
             self.assertFalse(state["features"]["candidate_output_enabled"])
+
+    def test_unverified_ready_profile_requires_contact_verification(self):
+        with Session(self.engine) as db:
+            user_id=self.add_ready_user(db,"needs-verify@example.com")
+            user=db.get(User,user_id)
+            user.email_verified_at=None
+            user.phone_verified_at=None
+            db.commit()
+            state=waitlist_status(db,user_id=user_id)
+            self.assertFalse(state["ready"])
+            self.assertEqual(state["state"],"CONTACT_VERIFICATION_REQUIRED")
+
+    def test_closed_city_preserves_city_and_enters_city_waitlist(self):
+        with Session(self.engine) as db:
+            ast=Market(
+                code="KZ-AST",country_code="KZ",city_code="AST",display_name="Астана",
+                timezone="Asia/Almaty",currency_code="KZT",default_language="ru-KZ",
+                supported_languages=["ru-KZ","kk-KZ"],registration_open=True,matching_open=False,
+            )
+            db.add(ast);db.flush()
+            user_id=self.add_ready_user(db,"astana@example.com")
+            profile=db.get(Profile,user_id)
+            profile.market_id=ast.id
+            profile.city="Астана"
+            db.commit()
+            state=waitlist_status(db,user_id=user_id)
+            self.assertFalse(state["ready"])
+            self.assertEqual(state["state"],"CITY_WAITLIST")
+            self.assertEqual(state["market_name"],"Астана")
+            self.assertFalse(state["market_matching_open"])
 
     def test_incomplete_profile_does_not_claim_waitlist_ready(self):
         with Session(self.engine) as db:
