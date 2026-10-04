@@ -33,11 +33,13 @@ from app.auth.service import (
     lookup_session,
     normalize_email,
     register_email_user,
+    request_email_verification_challenge,
     request_phone_link_code,
     request_phone_login_code,
     request_phone_registration_code,
     reset_password_with_challenge,
     revoke_session,
+    verify_email_challenge,
     verify_phone_link_code,
     verify_phone_login_code,
     verify_phone_registration_code,
@@ -51,6 +53,14 @@ from app.auth.oauth import (
 )
 from app.auth.sms import SmsError, sms_sender_from_env
 from app.auth.web import phone_login_html
+from app.analytics.events import (
+    EVENT_CANDIDATE_VIEWED,
+    EVENT_LANDING_VIEW,
+    EVENT_ONBOARDING_STARTED,
+    EVENT_REGISTRATION_STARTED,
+    track_event,
+    track_once,
+)
 from app.db.models import AuthIdentity, Block, Interest, Market, Match, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
@@ -354,6 +364,84 @@ def _send_password_reset_email(email: str, token: str) -> None:
         if username:
             client.login(username, password)
         client.send_message(message)
+
+
+def _attribution_payload(body: dict[str, Any]) -> dict[str, str]:
+    raw = body.get("attribution")
+    if not isinstance(raw, dict):
+        return {}
+    allowed = (
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_content",
+        "utm_term",
+        "platform",
+    )
+    return {
+        key: str(raw.get(key, "") or "").strip()[:255]
+        for key in allowed
+        if str(raw.get(key, "") or "").strip()
+    }
+
+
+def email_verification_configured() -> bool:
+    return password_reset_email_configured()
+
+
+def _send_email_verification_email(email: str, token: str) -> None:
+    host = os.environ.get("SMTP_HOST", "").strip()
+    sender = os.environ.get("SMTP_FROM", "").strip()
+    if not host or not sender:
+        raise RuntimeError("email_verification_not_configured")
+
+    port = int(os.environ.get("SMTP_PORT", "587") or "587")
+    username = os.environ.get("SMTP_USERNAME", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    use_ssl = os.environ.get("SMTP_SSL", "").strip().lower() in {"1", "true", "yes"}
+    use_starttls = os.environ.get("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes"}
+    public_url = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+    if not public_url:
+        raise RuntimeError("PUBLIC_URL is required for verification email")
+
+    verify_url = (
+        public_url
+        + "/#verify-email?email="
+        + quote(email, safe="")
+        + "&challenge="
+        + quote(token, safe="")
+    )
+    message = EmailMessage()
+    message["Subject"] = "Подтвердите email в MatchLab"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        "Подтвердите email для MatchLab.\n\n"
+        f"Откройте ссылку: {verify_url}\n\n"
+        "Ссылка действует ограниченное время. Если это были не вы, письмо можно проигнорировать."
+    )
+
+    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_cls(host, port, timeout=10) as client:
+        if not use_ssl and use_starttls:
+            client.starttls()
+        if username:
+            client.login(username, password)
+        client.send_message(message)
+
+
+def _send_verification_async(email: str, token: str) -> None:
+    def worker() -> None:
+        try:
+            _send_email_verification_email(email, token)
+        except (OSError, RuntimeError, smtplib.SMTPException):
+            pass
+
+    threading.Thread(
+        target=worker,
+        name="matchlab-email-verification",
+        daemon=True,
+    ).start()
 
 
 def _candidate_photo_urls(db, user_id: int, *, limit: int = 5) -> list[str]:
@@ -913,6 +1001,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         ),
                         "phone_auth_configured": phone_auth_configured(),
                         "password_reset_email_configured": password_reset_email_configured(),
+                        "email_verification_configured": email_verification_configured(),
                         "social_auth": social_auth_configured(),
                         "photo_storage_configured": photo_storage_configured(),
                         "push": {
@@ -960,6 +1049,32 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, retention_policy())
             return
 
+        if method == "POST" and path == f"{API_PREFIX}/analytics/anonymous":
+            self._origin_guard()
+            body = self._body()
+            event_type = str(body.get("event_type", "")).upper()
+            if event_type not in {EVENT_LANDING_VIEW, EVENT_REGISTRATION_STARTED}:
+                raise ApiError(HTTPStatus.BAD_REQUEST, "unsupported_anonymous_event")
+            visitor_id = str(body.get("visitor_id", "")).strip()[:128]
+            if not visitor_id:
+                raise ApiError(HTTPStatus.BAD_REQUEST, "visitor_id_required")
+            metadata = _attribution_payload(body)
+            metadata.update(
+                {
+                    "visitor_id": visitor_id,
+                    "platform": str(body.get("platform", "web"))[:32],
+                }
+            )
+            with runtime().db() as db:
+                track_event(
+                    db,
+                    event_type=event_type,
+                    user_id=None,
+                    metadata=metadata,
+                )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True})
+            return
+
         if method == "POST" and path in {
             f"{API_PREFIX}/auth/register",
             f"{API_PREFIX}/auth/login",
@@ -973,7 +1088,14 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         body.get("email", ""),
                         body.get("password", ""),
                         referral_code=body.get("referral_code"),
+                        attribution=_attribution_payload(body),
                     )
+                    _, verification_token = request_email_verification_challenge(
+                        db,
+                        user_id=user.id,
+                    )
+                    if verification_token and email_verification_configured():
+                        _send_verification_async(user.email, verification_token)
                 else:
                     identifier = body.get("identifier")
                     if identifier is None:
@@ -996,7 +1118,16 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 csrf = new_csrf_token()
                 self._send_json(
                     HTTPStatus.CREATED if path.endswith("/register") else HTTPStatus.OK,
-                    {"ok": True, "user_id": user.id},
+                    {
+                        "ok": True,
+                        "user_id": user.id,
+                        "email_verified": bool(user.email_verified_at),
+                        "email_verification_delivery": (
+                            "email"
+                            if path.endswith("/register") and email_verification_configured()
+                            else None
+                        ),
+                    },
                     cookies=[
                         SESSION_COOKIE.header(bearer),
                         CSRF_COOKIE.header(csrf),
@@ -1029,6 +1160,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     code=str(body.get("code", "")),
                     password=str(body.get("password", "")),
                     referral_code=body.get("referral_code"),
+                    attribution=_attribution_payload(body),
                 )
                 bearer = create_session(
                     db,
@@ -1071,6 +1203,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     phone_e164=str(body.get("phone", "")),
                     code=str(body.get("code", "")),
                     referral_code=body.get("referral_code"),
+                    attribution=_attribution_payload(body),
                     new_password=(
                         str(password_value)
                         if password_value is not None and str(password_value) != ""
@@ -1156,6 +1289,21 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
             return
 
+        if method == "POST" and path == f"{API_PREFIX}/auth/email/verify":
+            self._origin_guard()
+            body = self._body()
+            with runtime().db() as db:
+                user = verify_email_challenge(
+                    db,
+                    email=str(body.get("email", "")),
+                    secret=str(body.get("token", "")),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "email_verified": True, "user_id": user.id},
+                )
+            return
+
         if method == "POST" and path == f"{API_PREFIX}/auth/oidc/nonce":
             self._origin_guard()
             body = self._body()
@@ -1193,6 +1341,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     db,
                     identity=identity,
                     referral_code=body.get("referral_code"),
+                    attribution=_attribution_payload(body),
                 )
                 bearer = create_session(
                     db,
