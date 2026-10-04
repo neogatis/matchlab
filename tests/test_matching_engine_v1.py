@@ -83,7 +83,12 @@ class MatchingEngineTests(unittest.TestCase):
         answer_value=3,
         updated_at=None,
     ):
-        user=User(email=email,password_hash="x",referral_code=email.split("@")[0])
+        user=User(
+            email=email,
+            password_hash="x",
+            referral_code=email.split("@")[0],
+            email_verified_at=self.now,
+        )
         db.add(user); db.flush()
         p=Profile(
             user_id=user.id,
@@ -166,6 +171,16 @@ class MatchingEngineTests(unittest.TestCase):
             self.assertEqual(set(result["category_scores"].values()),{100})
             self.assertGreaterEqual(result["final_mutual_fit_score"],0)
             self.assertLessEqual(result["final_mutual_fit_score"],100)
+
+    def test_unverified_contact_is_not_matchable(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M")
+            db.get(User,a).email_verified_at=None
+            db.commit()
+            result=matching.evaluate_pair(db,a,b)
+            self.assertFalse(result["eligible"])
+            self.assertEqual(result["reason"],"source_contact_unverified")
 
     def test_one_sided_hard_age_conflict_blocks_pair(self):
         with Session(self.engine) as db:
