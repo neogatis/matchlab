@@ -63,7 +63,7 @@ from app.analytics.events import (
     track_event,
     track_once,
 )
-from app.db.models import AuthIdentity, Block, Interest, Market, Match, Notification, Photo, Profile, PushDevice, User
+from app.db.models import AuthIdentity, Block, Interest, Market, MarketingAttribution, Match, Notification, Photo, Profile, PushDevice, User
 from app.db.session import make_engine
 from app.console.access import ConsoleAccessDenied, require_console
 from app.console.dashboard import prelaunch_dashboard_html
@@ -449,6 +449,30 @@ def _verification_payload(user: User) -> dict[str, Any]:
         ),
         "email_delivery_available": password_reset_email_configured(),
     }
+
+
+def _analytics_metadata(
+    db,
+    *,
+    user_id: int,
+    platform: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"platform": platform}
+    attribution = db.get(MarketingAttribution, user_id)
+    if attribution is not None:
+        for key in ("utm_source", "utm_campaign", "utm_content"):
+            value = str(getattr(attribution, key, "") or "").strip()
+            if value:
+                metadata[key] = value
+    profile = db.get(Profile, user_id)
+    if profile is not None and profile.market_id is not None:
+        market = db.get(Market, profile.market_id)
+        if market is not None:
+            metadata["market_code"] = market.code
+    if extra:
+        metadata.update(extra)
+    return metadata
 
 
 def _event_platform(headers) -> str:
@@ -1712,6 +1736,16 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/onboarding":
+                track_once(
+                    db,
+                    event_type=EVENT_ONBOARDING_STARTED,
+                    user_id=principal.user_id,
+                    metadata=_analytics_metadata(
+                        db,
+                        user_id=principal.user_id,
+                        platform=_event_platform(self.headers),
+                    ),
+                )
                 profile = db.get(Profile, principal.user_id)
                 completion = profile_completion_state(profile)
                 response: dict[str, Any] = {
@@ -1805,6 +1839,17 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     market_code=str(body.get("market_code", "")),
                     preferred_locale=body.get("preferred_locale"),
                     city_name=str(body.get("city", "")),
+                )
+                track_once(
+                    db,
+                    event_type=EVENT_BASIC_PROFILE_COMPLETED,
+                    user_id=principal.user_id,
+                    metadata=_analytics_metadata(
+                        db,
+                        user_id=principal.user_id,
+                        platform=_event_platform(self.headers),
+                        extra={"market_code": str(body.get("market_code", ""))},
+                    ),
                 )
                 self._send_json(HTTPStatus.OK, {"ok": True, "user_id": row.user_id})
                 return
@@ -1961,14 +2006,23 @@ class MatchLabHandler(BaseHTTPRequestHandler):
             if method == "POST" and path == f"{API_PREFIX}/preferences":
                 body = self._body()
                 _ensure_launch_markets(db)
-                self._send_json(
-                    HTTPStatus.OK,
-                    set_preferences(
-                        db,
-                        user_id=principal.user_id,
-                        preferences=body.get("preferences", {}),
-                    ),
+                result = set_preferences(
+                    db,
+                    user_id=principal.user_id,
+                    preferences=body.get("preferences", {}),
                 )
+                if result.get("complete"):
+                    track_once(
+                        db,
+                        event_type=EVENT_PARTNER_PREFERENCES_COMPLETED,
+                        user_id=principal.user_id,
+                        metadata=_analytics_metadata(
+                            db,
+                            user_id=principal.user_id,
+                            platform=_event_platform(self.headers),
+                        ),
+                    )
+                self._send_json(HTTPStatus.OK, result)
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/photos":
@@ -2247,6 +2301,27 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "POST" and path == f"{API_PREFIX}/analytics/product":
+                body = self._body()
+                event_type = str(body.get("event_type", "")).strip().upper()
+                allowed = {EVENT_CANDIDATE_VIEWED}
+                if event_type not in allowed or event_type not in PRODUCT_EVENT_TYPES:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "unsupported_product_event")
+                extra = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+                track_event(
+                    db,
+                    event_type=event_type,
+                    user_id=principal.user_id,
+                    metadata=_analytics_metadata(
+                        db,
+                        user_id=principal.user_id,
+                        platform=_event_platform(self.headers),
+                        extra=extra,
+                    ),
+                )
+                self._send_json(HTTPStatus.CREATED, {"ok": True})
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/discovery/candidates":
                 query = parse_qs(urlparse(self.path).query)
                 try:
@@ -2436,10 +2511,20 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/waitlist/status":
-                self._send_json(
-                    HTTPStatus.OK,
-                    waitlist_status(db, user_id=principal.user_id),
-                )
+                result = waitlist_status(db, user_id=principal.user_id)
+                if result.get("state") == "WAITLIST":
+                    track_once(
+                        db,
+                        event_type=EVENT_WAITLIST_JOINED,
+                        user_id=principal.user_id,
+                        metadata=_analytics_metadata(
+                            db,
+                            user_id=principal.user_id,
+                            platform=_event_platform(self.headers),
+                            extra={"market_code": result.get("market_code")},
+                        ),
+                    )
+                self._send_json(HTTPStatus.OK, result)
                 return
 
             if method == "GET" and path == f"{API_PREFIX}/compatibility/me":
