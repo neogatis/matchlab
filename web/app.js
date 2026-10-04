@@ -103,6 +103,19 @@
     el.hidden = false;
   }
 
+  function showCandidateFeedback(message) {
+    document.querySelector(".candidate-feedback")?.remove();
+    const el = document.createElement("div");
+    el.className = "candidate-feedback";
+    el.textContent = message;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 240);
+    }, 2600);
+  }
+
   function renderAuth(mode="login") {
     clearPoller();
     const register = mode === "register";
@@ -442,9 +455,9 @@
         '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div></div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
+        '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее о человеке →</button>' +
         '<div class="actions candidate-actions">' +
-          '<button class="ghost" data-candidate-skip="' + c.user_id + '">Пропустить</button>' +
-          '<button class="secondary" data-candidate-detail="' + c.user_id + '">Подробнее</button>' +
+          '<button class="secondary candidate-reject" data-candidate-skip="' + c.user_id + '">Не мой человек</button>' +
           '<button class="primary" data-candidate-like="' + c.user_id + '">Хочу познакомиться</button>' +
         '</div>' +
         '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Пожаловаться или заблокировать</button>' +
@@ -521,17 +534,18 @@
       btn.onclick=async()=>{
         const id=Number(btn.dataset.candidateSkip);
         btn.disabled=true;
-        btn.textContent="Пропускаем…";
+        btn.textContent="Учитываем…";
         try{
           await post("/api/v1/discovery/decision",{candidate_user_id:id,action:"SKIPPED"});
+          showCandidateFeedback("Поняли. Учтём ваш выбор при следующих подборках.");
           state.candidates=state.candidates.filter(x=>Number(x.user_id)!==id);
           if(state.currentCandidate&&Number(state.currentCandidate.user_id)===id)state.currentCandidate=null;
           if((location.hash||"").startsWith("#candidate"))setRoute("home");
           else renderHome();
         }catch(e){
           btn.disabled=false;
-          btn.textContent="Пропустить";
-          alert("Не удалось пропустить профиль: "+e.message);
+          btn.textContent="Не мой человек";
+          alert("Не удалось учесть выбор: "+e.message);
         }
       };
     });
