@@ -185,9 +185,10 @@
 
   function renderAuth(mode="login") {
     clearPoller();
+    trackAnonymous("LANDING_VIEW");
     const register = mode === "register";
     root.innerHTML = '<main class="auth-screen">' +
-      '<img class="auth-hero-photo" src="/web/hero.jpg?v=14" alt="" aria-hidden="true">' +
+      '<img class="auth-hero-photo" src="/web/hero.jpg?v=18" alt="" aria-hidden="true">' +
       '<div class="auth-wrap">' +
         '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
         '<div class="auth-tagline">' +
@@ -1953,7 +1954,6 @@
   window.addEventListener("hashchange",()=>renderRoute());
   window.addEventListener("load",async()=>{
     captureAttribution();
-    trackAnonymous("LANDING_VIEW");
     if("serviceWorker" in navigator) navigator.serviceWorker.register("/web/sw.js").catch(()=>{});
     await renderRoute();
   });
