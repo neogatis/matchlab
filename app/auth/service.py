@@ -873,12 +873,12 @@ def verify_phone_login_code(
                 verified_at=now,
             )
         )
-        track_once(
-            db,
-            event_type=EVENT_REGISTRATION,
-            user_id=user.id,
-            metadata={"channel": "phone"},
-        )
+        metadata = {
+            "channel": "phone",
+            "platform": str((attribution or {}).get("platform", "web")),
+        }
+        track_once(db, event_type=EVENT_REGISTRATION, user_id=user.id, metadata=metadata)
+        track_once(db, event_type=EVENT_REGISTRATION_COMPLETED, user_id=user.id, metadata=metadata)
     else:
         if user.status not in {"ACTIVE", "SOFT_BANNED"}:
             raise InvalidCredentials("Account unavailable")
@@ -998,6 +998,13 @@ def verify_phone_link_code(
 
     user.phone_e164 = phone
     user.phone_verified_at = now
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     subject = phone_identity_subject(phone)
     identity = db.execute(
         select(AuthIdentity).where(
