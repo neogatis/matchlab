@@ -1008,3 +1008,34 @@ body{background:var(--bg)}
     object-position:58% center;
   }
 }
+
+
+/* AUTH HERO LAYERING FIX V15 */
+.auth-screen{
+  position:relative!important;
+  isolation:isolate!important;
+  background:#171020!important;
+}
+.auth-hero-photo{
+  position:fixed!important;
+  inset:0!important;
+  z-index:0!important;
+  width:100%!important;
+  height:100%!important;
+  object-fit:cover!important;
+  object-position:center 40%!important;
+  display:block!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:none!important;
+}
+.auth-screen::before{
+  z-index:1!important;
+}
+.auth-wrap{
+  position:relative!important;
+  z-index:2!important;
+}
+@media(max-width:760px){
+  .auth-hero-photo{object-position:58% center!important}
+}
