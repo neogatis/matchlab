@@ -202,6 +202,10 @@ def mutual_hard_pass(db: Session, user_a: int, user_b: int) -> tuple[bool, str |
         return False, "source_user_inactive"
     if ub is None or ub.status != "ACTIVE":
         return False, "target_user_inactive"
+    if ua.email_verified_at is None and ua.phone_verified_at is None:
+        return False, "source_contact_unverified"
+    if ub.email_verified_at is None and ub.phone_verified_at is None:
+        return False, "target_contact_unverified"
     pa, pb = db.get(Profile, user_a), db.get(Profile, user_b)
     ma, mb = _market(db, pa), _market(db, pb)
     if not is_matchable(pa, ma):
@@ -522,6 +526,10 @@ def rank_candidates(
         .where(
             Profile.user_id != user_id,
             User.status == "ACTIVE",
+            or_(
+                User.email_verified_at.is_not(None),
+                User.phone_verified_at.is_not(None),
+            ),
             Profile.profile_completed.is_(True),
             Profile.questionnaire_completed.is_(True),
             Profile.partner_preferences_completed.is_(True),
