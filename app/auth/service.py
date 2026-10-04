@@ -14,7 +14,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from app.analytics.events import EVENT_REGISTRATION, track_once
+from app.analytics.events import (
+    EVENT_EMAIL_VERIFIED,
+    EVENT_PHONE_VERIFIED,
+    EVENT_REGISTRATION,
+    EVENT_REGISTRATION_COMPLETED,
+    track_once,
+)
 from app.db.models import AuthChallenge, AuthIdentity, AuthRateLimit, MarketingAttribution, Session as DbSession, User
 
 
@@ -110,6 +116,7 @@ def register_email_user(
     password: str,
     referred_by: int | None = None,
     referral_code: str | None = None,
+    attribution: dict | None = None,
 ) -> User:
     normalized = normalize_email(email)
     password_hash = hash_password(password)
@@ -141,9 +148,15 @@ def register_email_user(
         db.rollback()
         raise AuthError("Email already registered") from exc
 
+    attribution = attribution or {}
     db.add(
         MarketingAttribution(
             user_id=user.id,
+            utm_source=str(attribution.get("utm_source", ""))[:255],
+            utm_medium=str(attribution.get("utm_medium", ""))[:255],
+            utm_campaign=str(attribution.get("utm_campaign", ""))[:255],
+            utm_content=str(attribution.get("utm_content", ""))[:255],
+            utm_term=str(attribution.get("utm_term", ""))[:255],
             referral_input=referral_input[:255],
         )
     )
@@ -158,11 +171,18 @@ def register_email_user(
             referral_code_used=referral_input or None,
         )
 
+    metadata = {"channel": "email", "platform": str((attribution or {}).get("platform", "web"))}
     track_once(
         db,
         event_type=EVENT_REGISTRATION,
         user_id=user.id,
-        metadata={"channel": "email"},
+        metadata=metadata,
+    )
+    track_once(
+        db,
+        event_type=EVENT_REGISTRATION_COMPLETED,
+        user_id=user.id,
+        metadata=metadata,
     )
     return user
 
@@ -463,6 +483,42 @@ def consume_challenge(
     return row
 
 
+def request_email_verification_challenge(
+    db: OrmSession,
+    *,
+    user_id: int,
+    now: datetime | None = None,
+) -> tuple[User, str | None]:
+    now = now or utcnow()
+    user = db.get(User, user_id)
+    if user is None:
+        raise AuthError("User not found")
+    if user.email_verified_at is not None:
+        return user, None
+    if user.email.endswith(("@phone.matchlab.invalid", "@identity.matchlab.invalid")):
+        raise AuthError("email_verification_unavailable")
+
+    _rate_limit(
+        db,
+        "email-verify:" + sha256_text(user.email),
+        limit=5,
+        window_seconds=15 * 60,
+        block_seconds=15 * 60,
+        now=now,
+    )
+    token = create_challenge(
+        db,
+        user_id=user.id,
+        purpose="EMAIL_VERIFY",
+        channel="email",
+        target=user.email,
+        ttl=timedelta(hours=24),
+        max_attempts=8,
+        now=now,
+    )
+    return user, token
+
+
 def verify_email_challenge(
     db: OrmSession,
     *,
@@ -484,6 +540,13 @@ def verify_email_challenge(
     if user is None or user.email != normalized:
         raise InvalidOrExpiredChallenge("Invalid or expired challenge")
     user.email_verified_at = now
+    track_once(
+        db,
+        event_type=EVENT_EMAIL_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "email"},
+        now=now,
+    )
     db.flush()
     return user
 
@@ -509,6 +572,13 @@ def verify_phone_challenge(
         raise InvalidOrExpiredChallenge("Invalid or expired challenge")
     user.phone_e164 = phone_e164.strip()
     user.phone_verified_at = now
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     db.flush()
     return user
 
@@ -607,6 +677,7 @@ def verify_phone_registration_code(
     code: str,
     password: str,
     referral_code: str | None = None,
+    attribution: dict | None = None,
     now: datetime | None = None,
 ) -> User:
     from app.auth.sms import normalize_phone
@@ -654,12 +725,10 @@ def verify_phone_registration_code(
             verified_at=now,
         )
     )
-    track_once(
-        db,
-        event_type=EVENT_REGISTRATION,
-        user_id=user.id,
-        metadata={"channel": "phone"},
-    )
+    metadata = {"channel": "phone", "platform": str((attribution or {}).get("platform", "web"))}
+    track_once(db, event_type=EVENT_REGISTRATION, user_id=user.id, metadata=metadata)
+    track_once(db, event_type=EVENT_REGISTRATION_COMPLETED, user_id=user.id, metadata=metadata)
+    track_once(db, event_type=EVENT_PHONE_VERIFIED, user_id=user.id, metadata={"channel": "phone"}, now=now)
     db.flush()
     return user
 
@@ -712,6 +781,7 @@ def _apply_referral_to_new_user(
     *,
     user: User,
     referral_code: str | None,
+    attribution: dict | None = None,
 ) -> None:
     referral_input = (referral_code or "").strip()
     resolved_referrer = None
@@ -723,9 +793,15 @@ def _apply_referral_to_new_user(
             resolved_referrer = referrer.id
             user.referred_by = referrer.id
 
+    attribution = attribution or {}
     db.add(
         MarketingAttribution(
             user_id=user.id,
+            utm_source=str(attribution.get("utm_source", ""))[:255],
+            utm_medium=str(attribution.get("utm_medium", ""))[:255],
+            utm_campaign=str(attribution.get("utm_campaign", ""))[:255],
+            utm_content=str(attribution.get("utm_content", ""))[:255],
+            utm_term=str(attribution.get("utm_term", ""))[:255],
             referral_input=referral_input[:255],
         )
     )
@@ -746,6 +822,7 @@ def verify_phone_login_code(
     phone_e164: str,
     code: str,
     referral_code: str | None = None,
+    attribution: dict | None = None,
     new_password: str | None = None,
     now: datetime | None = None,
 ) -> User:
@@ -784,6 +861,7 @@ def verify_phone_login_code(
             db,
             user=user,
             referral_code=referral_code,
+            attribution=attribution,
         )
         db.add(
             AuthIdentity(
@@ -826,6 +904,13 @@ def verify_phone_login_code(
         user.password_updated_at = now
         revoke_all_sessions(db, user.id, now=now)
 
+    track_once(
+        db,
+        event_type=EVENT_PHONE_VERIFIED,
+        user_id=user.id,
+        metadata={"channel": "phone"},
+        now=now,
+    )
     db.flush()
     return user
 
