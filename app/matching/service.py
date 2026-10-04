@@ -100,7 +100,7 @@ def _criterion_match(
     target_market: Market,
 ) -> bool | None:
     if pref.importance == "IGNORE":
-        return True
+        return None
 
     if key == "age":
         if target_profile.dob is None:
@@ -150,7 +150,7 @@ def _criterion_match(
             return None
         values = _list_values(pref)
         if "ANY" in values:
-            return True
+            return None
         return target in values if values else None
 
     if key in {"religion", "nationality"}:
@@ -436,6 +436,12 @@ def evaluate_pair(
         + readiness * FINAL_WEIGHTS["readiness"]
     ))
     distance = _haversine_km(ma, mb)
+    same_market = bool(ma and mb and ma.id == mb.id)
+    public_distance = None
+    if distance is not None and not same_market:
+        # Market coordinates are city centroids, not user GPS. Expose only an
+        # approximate city-to-city distance and never fake 0.0 km precision.
+        public_distance = int(round(distance / 10.0) * 10)
 
     return {
         "eligible": True,
@@ -446,7 +452,9 @@ def evaluate_pair(
         "activity_score": activity,
         "readiness_score": readiness,
         "final_mutual_fit_score": max(0, min(100, final)),
-        "distance_km": None if distance is None else round(distance, 1),
+        "distance_km": public_distance,
+        "distance_scope": "same_city" if same_market else ("city_centroid_approx" if public_distance is not None else None),
+        "distance_is_approximate": public_distance is not None,
     }
 
 
