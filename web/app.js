@@ -440,6 +440,138 @@
     ).join("") || '<span class="tag">Совместимые критерии</span>';
   }
 
+  const COMPATIBILITY_META = {
+    values:{
+      label:"Ценности",icon:"💜",
+      high:"очень близкие",mid:"много общего",soft:"есть точки совпадения",
+      highCopy:"Ваши ответы о жизненных приоритетах и важных принципах во многом совпадают.",
+      midCopy:"У вас много общего в жизненных приоритетах, а различия могут помочь лучше узнать взгляды друг друга.",
+      softCopy:"Есть общие ориентиры, которые стоит раскрыть подробнее в разговоре.",
+      attention:"Полезно обсудить, какие жизненные принципы для каждого особенно важны в отношениях."
+    },
+    relationship:{
+      label:"Отношения",icon:"🤝",
+      high:"ожидания совпадают",mid:"похожий взгляд",soft:"есть точки совпадения",
+      highCopy:"Ваши ожидания от отношений, близости и личных границ хорошо сочетаются.",
+      midCopy:"В представлении об отношениях у вас много общего, при этом некоторые ожидания лучше проговорить.",
+      softCopy:"Есть совместимые ожидания, которые стоит уточнить при знакомстве.",
+      attention:"Можно заранее поговорить о темпе сближения, личном пространстве и ожиданиях от отношений."
+    },
+    family:{
+      label:"Семья",icon:"🏠",
+      high:"очень близко",mid:"похожий взгляд",soft:"есть общее",
+      highCopy:"Ваши ответы о семье, долгосрочных планах и близких отношениях хорошо совпадают.",
+      midCopy:"Во взглядах на семью есть много общего, а детали полезно обсудить лично.",
+      softCopy:"Есть общая основа во взглядах на семью и будущее.",
+      attention:"Полезно спокойно обсудить планы на семью, детей и формат совместной жизни."
+    },
+    children:{
+      label:"Семья и дети",icon:"🏠",
+      high:"взгляды совпадают",mid:"много общего",soft:"есть общая основа",
+      highCopy:"Ваши ответы о семье и детях хорошо совпадают.",
+      midCopy:"В вопросах семьи и детей у вас много общего, а детали можно уточнить при общении.",
+      softCopy:"Есть общая основа во взглядах на семью и будущее.",
+      attention:"Полезно заранее проговорить ожидания по семье и детям — без спешки и давления."
+    },
+    communication:{
+      label:"Общение",icon:"💬",
+      high:"высокая совместимость",mid:"хорошо сочетается",soft:"есть потенциал",
+      highCopy:"Ваши стили общения хорошо сочетаются: есть потенциал спокойно обсуждать важные темы.",
+      midCopy:"В общении у вас много совместимых привычек, а различия могут дополнять друг друга.",
+      softCopy:"Есть точки соприкосновения в общении, которые лучше проверить в живом диалоге.",
+      attention:"Стоит узнать, как каждому удобнее обсуждать сложные темы и когда нужно личное пространство."
+    },
+    lifestyle:{
+      label:"Образ жизни",icon:"🌙",
+      high:"ритм близкий",mid:"в целом совпадает",soft:"есть различия",
+      highCopy:"Ваш повседневный ритм, привычки и отношение к свободному времени во многом совместимы.",
+      midCopy:"В образе жизни у вас много общего, хотя отдельные привычки могут отличаться.",
+      softCopy:"Ваш ритм жизни отличается в некоторых деталях — это хороший повод узнать привычки друг друга.",
+      attention:"Можно обсудить привычный ритм недели, социальную активность, отдых и личное время."
+    },
+    personality:{
+      label:"Характер",icon:"✨",
+      high:"хорошо дополняется",mid:"много общего",soft:"интересное сочетание",
+      highCopy:"По анкете ваши личные особенности хорошо сочетаются и могут дополнять друг друга.",
+      midCopy:"В характере есть много совместимых черт и несколько интересных различий.",
+      softCopy:"Темпераменты отличаются, но это может дать хороший баланс при взаимном уважении.",
+      attention:"Полезно обратить внимание на темп принятия решений, эмоциональность и потребность в личном времени."
+    },
+    intimacy:{
+      label:"Близость",icon:"🫶",
+      high:"ожидания близкие",mid:"хорошо сочетается",soft:"нужно узнать друг друга",
+      highCopy:"Ваши ожидания от эмоциональной близости и проявления заботы хорошо сочетаются.",
+      midCopy:"В представлении о близости у вас много общего, а личные нюансы лучше узнавать постепенно.",
+      softCopy:"Есть совместимая основа, которую важно раскрывать в комфортном для обоих темпе.",
+      attention:"Можно мягко обсудить, как каждый проявляет заботу, привязанность и нуждается в поддержке."
+    },
+    conflict:{
+      label:"Разногласия",icon:"🧩",
+      high:"подходы совместимы",mid:"можете договориться",soft:"важно понять стиль",
+      highCopy:"Ваши способы реагировать на разногласия хорошо сочетаются.",
+      midCopy:"У вас есть совместимые способы решать спорные ситуации и возвращаться к диалогу.",
+      softCopy:"Подходы к разногласиям различаются, но их можно хорошо согласовать через открытый разговор.",
+      attention:"Стоит узнать, как каждому комфортнее брать паузу, обсуждать эмоции и возвращаться к решению."
+    }
+  };
+
+  function compatibilityMeta(key) {
+    if (COMPATIBILITY_META[key]) return COMPATIBILITY_META[key];
+    const label = String(key || "Совместимость")
+      .replaceAll("_"," ")
+      .replace(/\b\w/g, ch => ch.toUpperCase());
+    return {
+      label,icon:"♡",
+      high:"очень близко",mid:"много общего",soft:"есть точки совпадения",
+      highCopy:"По этому параметру ваши ответы очень близки.",
+      midCopy:"По этому параметру у вас много общего.",
+      softCopy:"По этому параметру есть точки соприкосновения, которые стоит узнать глубже.",
+      attention:"Этот параметр полезно обсудить подробнее при знакомстве."
+    };
+  }
+
+  function compatibilityLevel(value, meta) {
+    const score = Number(value) || 0;
+    if (score >= 85) return {label:meta.high,copy:meta.highCopy,tone:"strong"};
+    if (score >= 70) return {label:meta.mid,copy:meta.midCopy,tone:"good"};
+    return {label:meta.soft,copy:meta.softCopy,tone:"soft"};
+  }
+
+  function overallCompatibility(score) {
+    const value = Number(score) || 0;
+    if (value >= 85) return "высокая совместимость";
+    if (value >= 75) return "хорошая совместимость";
+    if (value >= 65) return "перспективная совместимость";
+    return "есть точки соприкосновения";
+  }
+
+  function compatibilityReasonCard(key,value) {
+    const meta=compatibilityMeta(key);
+    const level=compatibilityLevel(value,meta);
+    return '<article class="compatibility-reason '+level.tone+'">'+
+      '<div class="compatibility-reason-icon">'+esc(meta.icon)+'</div>'+
+      '<div class="compatibility-reason-copy">'+
+        '<div class="compatibility-reason-head"><b>'+esc(meta.label)+'</b><span>'+esc(level.label)+'</span></div>'+
+        '<p>'+esc(level.copy)+'</p>'+
+        '<div class="compatibility-mini-track" aria-hidden="true"><i style="width:'+Math.max(0,Math.min(100,Number(value)||0))+'%"></i></div>'+
+      '</div>'+
+    '</article>';
+  }
+
+  function compatibilityAttention(entries) {
+    const candidates=entries
+      .filter(([,value])=>Number(value)<85)
+      .sort((a,b)=>Number(a[1])-Number(b[1]))
+      .slice(0,2);
+    if(!candidates.length){
+      return '<div class="compatibility-attention-item"><span>💡</span><div><b>Проверьте живую химию</b><p>По анкете совпадение сильное. Следующий важный шаг — понять, насколько вам легко и интересно общаться вживую.</p></div></div>';
+    }
+    return candidates.map(([key])=>{
+      const meta=compatibilityMeta(key);
+      return '<div class="compatibility-attention-item"><span>'+esc(meta.icon)+'</span><div><b>'+esc(meta.label)+'</b><p>'+esc(meta.attention)+'</p></div></div>';
+    }).join("");
+  }
+
   function candidateCard(c) {
     const image = c.photos?.[0];
     const name = c.display_name || "Профиль";
@@ -564,16 +696,32 @@
     if (!c) return setRoute("home");
     const score = c.mutual_fit_score ?? c.compatibility_score ?? 0;
     const scores = c.category_scores || {};
-    root.innerHTML = '<main class="page">' +
+    const entries = Object.entries(scores).sort((a,b)=>Number(b[1])-Number(a[1]));
+    const strongest = entries.slice(0,4);
+    const strongestLabels = strongest.slice(0,2).map(([key])=>compatibilityMeta(key).label);
+    const summary = strongestLabels.length
+      ? "Особенно близки: " + strongestLabels.join(" и ").toLowerCase() + "."
+      : "Совместимость рассчитана по вашим ответам, критериям и профилю.";
+    root.innerHTML = '<main class="page compatibility-page">' +
       '<header class="topbar"><button class="icon-btn" id="back-home">←</button><div class="brand" style="font-size:25px">Совместимость</div><div></div></header>' +
       candidateCard(c) +
-      '<div class="section-head"><h2>Почему вы подходите</h2></div>' +
-      '<section class="card"><div class="score-grid">' +
-        Object.entries(scores).slice(0,4).map(([key,value]) =>
-          '<div class="score"><b>' + esc(value) + '%</b><span class="muted">' + esc(key) + '</span></div>'
-        ).join("") +
-        (!Object.keys(scores).length ? '<div class="score"><b>' + esc(score) + '%</b><span class="muted">Общий показатель</span></div>' : '') +
-      '</div></section>' +
+      '<section class="card compatibility-overview-card">' +
+        '<div class="eyebrow">Ваше совпадение</div>' +
+        '<div class="compatibility-overview-score"><strong>' + esc(score) + '%</strong><div><h1>' + esc(overallCompatibility(score)) + '</h1><p>' + esc(summary) + '</p></div></div>' +
+        '<div class="compatibility-overall-track" aria-hidden="true"><i style="width:'+Math.max(0,Math.min(100,Number(score)||0))+'%"></i></div>' +
+        '<p class="compatibility-trust-note">Процент — не оценка человека и не гарантия отношений. Это степень совпадения ваших ответов и критериев MatchLab.</p>' +
+      '</section>' +
+      '<div class="section-head compatibility-section-head"><div><div class="eyebrow">Совпадения</div><h2>Почему вы можете подойти друг другу</h2></div></div>' +
+      '<section class="compatibility-reasons">' +
+        (strongest.length
+          ? strongest.map(([key,value])=>compatibilityReasonCard(key,value)).join("")
+          : '<article class="card"><p class="muted">Мы видим общее совпадение по анкете. Детализация по категориям появится после следующего пересчёта профиля.</p></article>') +
+      '</section>' +
+      '<section class="card compatibility-attention-card">' +
+        '<div class="compatibility-attention-title"><span>🌿</span><div><div class="eyebrow">Для хорошего старта</div><h2>На что стоит обратить внимание</h2></div></div>' +
+        '<p class="compatibility-attention-intro">Не как на недостатки, а как на темы, которые помогут быстрее понять друг друга.</p>' +
+        '<div class="compatibility-attention-list">' + compatibilityAttention(entries) + '</div>' +
+      '</section>' +
       '<div class="section-head"><h2>О человеке</h2></div>' +
       '<section class="card"><p>' + esc(c.bio || "Профиль заполнен и прошёл основные критерии MatchLab.") + '</p>' +
       '<div class="tags">' +
