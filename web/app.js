@@ -213,7 +213,7 @@
     const raw=(location.hash||"#reset-password").slice(1);
     const query=new URLSearchParams(raw.includes("?")?raw.split("?").slice(1).join("?"):"");
     const linkedEmail=query.get("email")||"";
-    const linkedToken=query.get("token")||"";
+    const linkedToken=query.get("challenge")||"";
     const hasLink=!!(linkedEmail&&linkedToken);
 
     root.innerHTML='<main class="auth-screen"><div class="auth-wrap">'+
