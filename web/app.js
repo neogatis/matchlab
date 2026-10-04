@@ -1266,16 +1266,18 @@
         (pct<100?'<button class="primary full" data-route="onboarding">Продолжить анкету →</button>':
           '<button class="secondary full" data-route="onboarding">Статус листа ожидания</button>')+
       '</section>'+
-      '<section class="profile-menu">'+
+      '<section class="profile-menu-section"><div class="profile-menu-heading"><span>Профиль и подбор</span><small>Настройте себя и то, кого хотите встретить</small></div><div class="profile-menu">'+
         profileMenuRow("👤","Редактировать профиль","Имя, о себе, образ жизни","profile-edit")+
-        profileMenuRow("🎯","Кого я ищу","Возраст, цели, привычки и другие критерии","preferences")+
-        profileMenuRow("🧠","Моя совместимость","Что анкета говорит о ваших приоритетах","compatibility",c.questionnaire?"Готово":"")+
-        profileMenuRow("📷","Мои фотографии","Добавить, удалить, выбрать главное фото","photos",(photoData.progress?.approved||0)+"/2")+
-        profileMenuRow("❤️","Статус знакомств","Активно, пауза или уже в отношениях","dating-status")+
-        profileMenuRow("🔔","Уведомления","Push и разрешения этого устройства","notifications")+
-        profileMenuRow("🛡","Безопасность и заблокированные","Жалобы, блокировки и список исключений","safety")+
-        profileMenuRow("⚙️","Настройки аккаунта","Вход, данные, документы и удаление","settings")+
-      '</section>'+
+        profileMenuRow("🎯","Кого я ищу","Возраст, цели и важные критерии","preferences")+
+        profileMenuRow("🧠","Моя совместимость","Ваши приоритеты по анкете","compatibility",c.questionnaire?"Готово":"")+
+        profileMenuRow("📷","Мои фотографии","Главное фото и порядок","photos",(photoData.progress?.approved||0)+"/2")+
+      '</div></section>'+
+      '<section class="profile-menu-section"><div class="profile-menu-heading"><span>Аккаунт и безопасность</span><small>Статус, уведомления и управление аккаунтом</small></div><div class="profile-menu">'+
+        profileMenuRow("❤️","Статус знакомств","Активность и пауза","dating-status")+
+        profileMenuRow("🔔","Уведомления","Push и разрешения","notifications")+
+        profileMenuRow("🛡","Безопасность","Блокировки и жалобы","safety")+
+        profileMenuRow("⚙️","Настройки аккаунта","Вход, данные и удаление","settings")+
+      '</div></section>'+
     '</main>'+nav("profile");
     bindCommon();
   }
@@ -1283,7 +1285,7 @@
   async function renderProfileEdit(){
     clearPoller(); loading("profile"); await loadMe();
     const p=state.profile?.profile||{};
-    root.innerHTML='<main class="page">'+profileBackHeader("Редактировать профиль")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Редактировать профиль")+
       '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Основное</div><h2>О вас</h2></div></div>'+
       '<div class="form-grid">'+
         '<label class="field-label">Имя<input class="input" id="edit-name" maxlength="80" value="'+esc(p.display_name||"")+'"></label>'+
@@ -1360,7 +1362,7 @@
     const goalValues=val("dating_goal",[]);
     const goal=Array.isArray(goalValues)&&goalValues.length===1?goalValues[0]:"ANY";
 
-    root.innerHTML='<main class="page">'+profileBackHeader("Кого я ищу")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Кого я ищу")+
       '<section class="card settings-card"><div class="eyebrow">Критерии партнёра</div><h2>Показывать только действительно подходящих людей</h2>'+
       '<p class="muted">Жёсткие критерии отсекают неподходящих кандидатов, остальные влияют на ранжирование совместимости.</p>'+
       '<div class="form-grid">'+
@@ -1412,7 +1414,7 @@
     clearPoller(); loading("profile");
     let data=null;
     try{data=await api("/api/v1/compatibility/me");}catch{}
-    root.innerHTML='<main class="page">'+profileBackHeader("Моя совместимость")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Моя совместимость")+
       (data
         ? '<section class="card compatibility-self"><div class="eyebrow">Ваш профиль совместимости</div><h2>Не «оценка личности», а карта приоритетов</h2>'+
           '<p class="muted">'+esc(data.note||"")+'</p>'+
@@ -1431,12 +1433,12 @@
     clearPoller(); loading("profile");
     let data={photos:[],progress:{}};
     try{data=await api("/api/v1/photos");}catch(e){
-      root.innerHTML='<main class="page">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(e.message)+'</p></section></main>'+nav("profile");
+      root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(e.message)+'</p></section></main>'+nav("profile");
       bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");return;
     }
     const items=(data.photos||[]).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     const statusLabel={APPROVED:"Одобрено",PENDING:"На модерации",REJECTED:"Отклонено"};
-    root.innerHTML='<main class="page">'+profileBackHeader("Мои фотографии")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+
       '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Фотографии</div><h2>'+(data.progress?.approved||0)+'/2 одобрено</h2></div></div>'+
       '<p class="muted">Первое главное фото показывается в подборе. Можно добавить до лимита, удалить или поменять порядок.</p>'+
       '<div class="photo-manager-grid">'+
@@ -1491,7 +1493,7 @@
     const p=state.profile?.profile||{};
     const relMap={ACTIVE_SEARCH:"ACTIVE",OPEN_TO_MATCH:"OPEN",PAUSED:"UNSURE",NOT_ACTIVE:"NO",IN_RELATIONSHIP:"IN_RELATIONSHIP"};
     const current=relMap[p.relationship_status]||"ACTIVE";
-    root.innerHTML='<main class="page">'+profileBackHeader("Статус знакомств")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Статус знакомств")+
       '<section class="card settings-card"><div class="eyebrow">Видимость в подборе</div><h2>Управляйте статусом без удаления профиля</h2>'+
       '<p class="muted">Пауза или статус «в отношениях» сразу исключают профиль из активного подбора.</p>'+
       '<div class="form-stack">'+
@@ -1523,7 +1525,7 @@
     try{devices=await api("/api/v1/push/devices");}catch{}
     const permission=("Notification" in window)?Notification.permission:"unsupported";
     const permissionLabels={granted:"Разрешены",denied:"Запрещены",default:"Не выбрано",unsupported:"Не поддерживаются"};
-    root.innerHTML='<main class="page">'+profileBackHeader("Уведомления")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Уведомления")+
       '<section class="card settings-card"><div class="eyebrow">Уведомления</div><h2>Не пропускайте важные совпадения</h2>'+
       '<div class="setting-line"><div><b>Разрешение браузера</b><span class="muted">'+esc(permissionLabels[permission]||permission)+'</span></div>'+
       (permission==="default"?'<button class="secondary" id="request-browser-notifications">Разрешить</button>':'')+'</div>'+
@@ -1542,7 +1544,7 @@
     let data={blocked:[]};
     try{data=await api("/api/v1/safety/blocked");}catch{}
     const blocked=data.blocked||[];
-    root.innerHTML='<main class="page">'+profileBackHeader("Безопасность")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Безопасность")+
       '<section class="card settings-card"><div class="eyebrow">Безопасность</div><h2>Заблокированные пользователи</h2>'+
       '<p class="muted">Заблокированный человек не появляется в подборе и не может отправлять вам сообщения.</p>'+
       (blocked.length?'<div class="blocked-list">'+blocked.map(item=>
@@ -1562,7 +1564,7 @@
     let methods={methods:[]};
     try{methods=await api("/api/v1/auth/methods");}catch{}
     const methodLabels={email:"Email",phone:"Телефон",google:"Google",apple:"Apple"};
-    root.innerHTML='<main class="page">'+profileBackHeader("Настройки аккаунта")+
+    root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Настройки аккаунта")+
       '<section class="card settings-card"><div class="eyebrow">Вход и безопасность</div><h2>Аккаунт</h2>'+
       '<div class="setting-line"><div><b>Способы входа</b><span class="muted">'+esc((methods.methods||[]).map(x=>methodLabels[x]||x).join(", ")||"Не определено")+'</span></div><button class="secondary" data-route="reset-password">Сменить пароль</button></div>'+
       (methods.phone?'<div class="setting-line"><div><b>Телефон</b><span class="muted">'+esc(methods.phone)+'</span></div><span class="tag">'+(methods.phone_verified?"Подтверждён":"Не подтверждён")+'</span></div>':'')+
