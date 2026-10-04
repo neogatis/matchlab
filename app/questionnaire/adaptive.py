@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.events import (
@@ -26,10 +26,12 @@ from app.profile.service import recompute_profile_completion
 from .service import active_version
 
 
-ADAPTIVE_VERSION = "adaptive-v1"
-MIN_ADAPTIVE_ANSWERS = 8
+ADAPTIVE_VERSION = "adaptive-v2"
+MIN_ADAPTIVE_ANSWERS = 5
 MAX_ADAPTIVE_ANSWERS = 20
-QUEUE_SIZE = 4
+BASE_PREFETCH_SIZE = 4
+ADAPTIVE_QUEUE_SIZE = 1
+AI_CANDIDATE_AXES = 5
 
 SCALE_OPTIONS = [
     {"value": 1, "label": "Совсем не похоже на меня"},
@@ -551,15 +553,85 @@ def _extract_response_text(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _openai_batch(
+
+def _recent_answer_context(
+    db: Session,
+    *,
+    user_id: int,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    legacy = _legacy_answers_by_qid(db, user_id)
+    items: list[dict[str, Any]] = []
+    for qid in BASE_ORDER:
+        if qid not in legacy:
+            continue
+        axis = AXIS_BY_QID[qid]
+        items.append(
+            {
+                "kind": "base",
+                "axis_key": axis.key,
+                "text": BASE_TEXT_OVERRIDES.get(qid, ""),
+                "value": int(legacy[qid]),
+            }
+        )
+
+    adaptive_rows = db.execute(
+        select(
+            AdaptiveQuestionnaireQuestion.axis_key,
+            AdaptiveQuestionnaireQuestion.prompt_text,
+            AdaptiveQuestionnaireAnswer.value_int,
+        )
+        .join(
+            AdaptiveQuestionnaireAnswer,
+            AdaptiveQuestionnaireAnswer.adaptive_question_id
+            == AdaptiveQuestionnaireQuestion.id,
+        )
+        .where(
+            AdaptiveQuestionnaireAnswer.user_id == user_id,
+            AdaptiveQuestionnaireQuestion.user_id == user_id,
+        )
+        .order_by(AdaptiveQuestionnaireQuestion.position)
+    ).all()
+    for axis_key, text_value, value in adaptive_rows:
+        items.append(
+            {
+                "kind": "adaptive",
+                "axis_key": str(axis_key),
+                "text": str(text_value),
+                "value": int(value),
+            }
+        )
+    return items[-limit:]
+
+
+def _recent_generated_texts(
+    db: Session,
+    *,
+    user_id: int,
+    limit: int = 24,
+) -> list[str]:
+    rows = db.execute(
+        select(AdaptiveQuestionnaireQuestion.prompt_text)
+        .where(AdaptiveQuestionnaireQuestion.user_id == user_id)
+        .order_by(AdaptiveQuestionnaireQuestion.position.desc())
+        .limit(limit)
+    ).scalars()
+    return [str(item) for item in rows]
+
+
+def _openai_next_question(
     axes: list[Axis],
     snapshot: dict[str, dict[str, Any]],
-) -> tuple[list[dict[str, str]], str | None]:
+    *,
+    recent_answers: list[dict[str, Any]],
+    already_asked: list[str],
+) -> tuple[dict[str, str] | None, str | None]:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     model = os.environ.get("OPENAI_ADAPTIVE_MODEL", "").strip()
     if not api_key or not model or not axes:
-        return [], None
+        return None, None
 
+    allowed = [axis.key for axis in axes]
     axis_payload = [
         {
             "axis_key": axis.key,
@@ -571,63 +643,50 @@ def _openai_batch(
         }
         for axis in axes
     ]
-    allowed = [axis.key for axis in axes]
     schema = {
         "type": "object",
         "properties": {
-            "questions": {
-                "type": "array",
-                "minItems": len(axes),
-                "maxItems": len(axes),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "axis_key": {
-                            "type": "string",
-                            "enum": allowed,
-                        },
-                        "text": {
-                            "type": "string",
-                            "minLength": 20,
-                            "maxLength": 220,
-                        },
-                    },
-                    "required": ["axis_key", "text"],
-                    "additionalProperties": False,
-                },
-            }
+            "axis_key": {"type": "string", "enum": allowed},
+            "text": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 220,
+            },
         },
-        "required": ["questions"],
+        "required": ["axis_key", "text"],
         "additionalProperties": False,
     }
     instructions = (
-        "Ты формулируешь уточняющие вопросы для дейтинг-анкеты MatchLab. "
+        "Ты управляешь адаптивной анкетой совместимости MatchLab. "
         "Это не медицинская и не диагностическая оценка. "
-        "Для каждой переданной психологической оси создай ровно одно короткое, "
-        "естественное и конкретное утверждение или бытовой сценарий на русском языке. "
-        "Пользователь отвечает по шкале от 1 «совсем не похоже на меня» до 5 "
-        "«очень похоже на меня». Формулируй так, чтобы более высокий ответ всегда "
-        "означал БОЛЬШЕ признака из high_definition. Не упоминай названия шкал, "
-        "психологические диагнозы, типы личности, травмы или клинические термины. "
-        "Не задавай вопрос, который уже очевидно повторяет предыдущий смысл. "
-        "Верни только структуру по заданной JSON-схеме."
+        "Из предложенных осей выбери РОВНО ОДНУ, ответ на которую сейчас сильнее всего "
+        "снизит неопределённость профиля пользователя с учётом его предыдущих ответов. "
+        "Затем создай одно короткое, естественное и конкретное утверждение или бытовой "
+        "сценарий на русском языке для шкалы 1–5. Более высокий ответ обязательно должен "
+        "означать БОЛЬШЕ признака из high_definition выбранной оси. "
+        "Не повторяй уже заданные вопросы по смыслу. Не используй психологические диагнозы, "
+        "типы личности, травмы, клинические термины и не делай выводов о чувствительных "
+        "характеристиках. Вопрос должен быть понятен без пояснений. "
+        "Верни только JSON по заданной схеме."
     )
     body = {
         "model": model,
         "store": False,
-        "max_output_tokens": 700,
+        "max_output_tokens": 320,
         "instructions": instructions,
         "input": json.dumps(
             {
-                "task": "generate_adaptive_relationship_questions",
-                "axes": axis_payload,
+                "task": "choose_and_generate_next_relationship_question",
+                "candidate_axes": axis_payload,
+                "recent_answers": recent_answers,
+                "already_asked": already_asked[-16:],
             },
             ensure_ascii=False,
         ),
         "text": {
             "format": {
                 "type": "json_schema",
-                "name": "adaptive_questions",
+                "name": "next_adaptive_question",
                 "strict": True,
                 "schema": schema,
             }
@@ -648,25 +707,55 @@ def _openai_batch(
         payload = response.json()
         raw = _extract_response_text(payload)
         if not raw:
-            return [], model
+            return None, model
         parsed = json.loads(raw)
-        questions = parsed.get("questions") or []
+        axis_key = str(parsed.get("axis_key", ""))
+        text_value = str(parsed.get("text", "")).strip()
     except Exception:
-        return [], model
+        return None, model
 
-    seen: set[str] = set()
-    valid: list[dict[str, str]] = []
-    for item in questions:
-        axis_key = str(item.get("axis_key", ""))
-        text = str(item.get("text", "")).strip()
-        if (
-            axis_key in allowed
-            and axis_key not in seen
-            and 20 <= len(text) <= 220
-        ):
-            seen.add(axis_key)
-            valid.append({"axis_key": axis_key, "text": text})
-    return valid, model
+    if axis_key not in allowed or not 20 <= len(text_value) <= 220:
+        return None, model
+    if any(text_value.casefold() == old.casefold() for old in already_asked):
+        return None, model
+    return {"axis_key": axis_key, "text": text_value}, model
+
+
+def _drop_unanswered_generated(db: Session, *, user_id: int) -> None:
+    answered_ids = select(
+        AdaptiveQuestionnaireAnswer.adaptive_question_id
+    ).where(AdaptiveQuestionnaireAnswer.user_id == user_id)
+    db.execute(
+        delete(AdaptiveQuestionnaireQuestion).where(
+            AdaptiveQuestionnaireQuestion.user_id == user_id,
+            AdaptiveQuestionnaireQuestion.id.not_in(answered_ids),
+        )
+    )
+    db.flush()
+
+
+def _fallback_bank_text(
+    db: Session,
+    *,
+    axis: Axis,
+    user_id: int,
+    position: int,
+) -> str:
+    used = {
+        text.casefold()
+        for text in _recent_generated_texts(
+            db,
+            user_id=user_id,
+            limit=64,
+        )
+    }
+    items = BANK[axis.key]
+    start = (user_id + position + len(axis.key)) % len(items)
+    for offset in range(len(items)):
+        candidate = items[(start + offset) % len(items)]
+        if candidate.casefold() not in used:
+            return candidate
+    return _bank_text(axis, user_id=user_id, position=position)
 
 
 def _ensure_queue(
@@ -687,43 +776,62 @@ def _ensure_queue(
     if remaining <= 0:
         return
 
-    batch_size = min(QUEUE_SIZE, remaining)
-    axes = _priority_axes(snapshot, limit=batch_size)
-    generated, model = _openai_batch(axes, snapshot)
-    generated_map = {
-        item["axis_key"]: item["text"]
-        for item in generated
-    }
+    axes = _priority_axes(
+        snapshot,
+        limit=min(AI_CANDIDATE_AXES, len(AXES)),
+    )
+    recent_answers = _recent_answer_context(
+        db,
+        user_id=user_id,
+    )
+    already_asked = _recent_generated_texts(
+        db,
+        user_id=user_id,
+    )
+    generated, model = _openai_next_question(
+        axes,
+        snapshot,
+        recent_answers=recent_answers,
+        already_asked=already_asked,
+    )
 
-    position = _adaptive_generated_count(db, user_id)
-    for axis in axes:
-        position += 1
-        text = generated_map.get(axis.key)
-        source = "OPENAI" if text else "BANK"
-        if not text:
-            text = _bank_text(
-                axis,
-                user_id=user_id,
-                position=position,
-            )
-        db.add(
-            AdaptiveQuestionnaireQuestion(
-                user_id=user_id,
-                axis_key=axis.key,
-                category_key=axis.category_key,
-                prompt_text=text,
-                source=source,
-                model=model if source == "OPENAI" else None,
-                position=position,
-                generator_metadata={
-                    "adaptive_version": ADAPTIVE_VERSION,
-                    "confidence_before": snapshot[axis.key]["confidence"],
-                    "score_before": snapshot[axis.key]["score"],
-                },
-            )
+    axis = axes[0]
+    text_value: str | None = None
+    source = "BANK"
+    if generated is not None:
+        axis = AXIS_BY_KEY[generated["axis_key"]]
+        text_value = generated["text"]
+        source = "OPENAI"
+
+    position = _adaptive_generated_count(db, user_id) + 1
+    if not text_value:
+        text_value = _fallback_bank_text(
+            db,
+            axis=axis,
+            user_id=user_id,
+            position=position,
         )
-    db.flush()
 
+    db.add(
+        AdaptiveQuestionnaireQuestion(
+            user_id=user_id,
+            axis_key=axis.key,
+            category_key=axis.category_key,
+            prompt_text=text_value,
+            source=source,
+            model=model if source == "OPENAI" else None,
+            position=position,
+            generator_metadata={
+                "adaptive_version": ADAPTIVE_VERSION,
+                "confidence_before": snapshot[axis.key]["confidence"],
+                "score_before": snapshot[axis.key]["score"],
+                "candidate_axes": [item.key for item in axes],
+                "recent_answer_count": len(recent_answers),
+                "generated_one_at_a_time": True,
+            },
+        )
+    )
+    db.flush()
 
 def _mark_complete(db: Session, user_id: int) -> None:
     profile = db.get(Profile, user_id)
@@ -783,7 +891,7 @@ def state(
             item
             for item in BASE_ORDER
             if item not in legacy
-        ][:QUEUE_SIZE]
+        ][:BASE_PREFETCH_SIZE]
         serialized = [
             _serialize_base_question(db, item)
             for item in remaining_qids
@@ -862,7 +970,7 @@ def state(
         "question": _serialize_adaptive_question(pending[0]),
         "prefetch": [
             _serialize_adaptive_question(item)
-            for item in pending[1:QUEUE_SIZE]
+            for item in pending[1:ADAPTIVE_QUEUE_SIZE]
         ],
     }
 
@@ -936,6 +1044,10 @@ def answer(
         user_id=user_id,
         metadata={"questionnaire_version": ADAPTIVE_VERSION},
     )
+
+    # Any unanswered adaptive questions were generated from an older snapshot.
+    # Drop them so the next question is chosen from the freshly recalculated profile.
+    _drop_unanswered_generated(db, user_id=user_id)
 
     return state(
         db,
