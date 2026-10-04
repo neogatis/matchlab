@@ -282,6 +282,7 @@ def upsert_basic_profile(
     seek_gender: str,
     market_code: str,
     preferred_locale: str | None = None,
+    city_name: str | None = None,
     now: datetime | None = None,
 ) -> Profile:
     now = now or utcnow()
@@ -309,7 +310,15 @@ def upsert_basic_profile(
     profile.gender = gender
     profile.seek_gender = seek_gender
     profile.market_id = market.id
-    profile.city = market.display_name
+    city_name = (city_name or "").strip()
+    if market.code == "KZ-OTHER":
+        if not city_name:
+            raise ProfileError("City is required")
+        if len(city_name) > 120:
+            raise ProfileError("City is too long")
+        profile.city = city_name
+    else:
+        profile.city = market.display_name
     profile.country_code = market.country_code
     profile.preferred_locale = preferred_locale or market.default_language
     profile.updated_at = now
