@@ -141,10 +141,14 @@ def _criterion_match(
 
     if key == "gender":
         values = _list_values(pref)
+        if "ANY" in values:
+            return None
         return target_profile.gender in values if values else None
 
     if key == "market":
         values = _list_values(pref)
+        if "ANY" in values:
+            return None
         return target_market.code in values if values else None
 
     attribute_map = {
@@ -168,7 +172,10 @@ def _criterion_match(
         target = str(getattr(target_profile, key, "") or "").strip()
         if not target:
             return None
-        values = [x.casefold() for x in _list_values(pref)]
+        raw_values = _list_values(pref)
+        if any(value.upper() == "ANY" for value in raw_values):
+            return None
+        values = [x.casefold() for x in raw_values]
         return target.casefold() in values if values else None
 
     return None
