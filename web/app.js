@@ -120,6 +120,7 @@
     clearPoller();
     const register = mode === "register";
     root.innerHTML = '<main class="auth-screen">' +
+      '<img class="auth-hero-photo" src="/web/hero.jpg?v=14" alt="" aria-hidden="true">' +
       '<div class="auth-wrap">' +
         '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
         '<div class="auth-tagline">' +
