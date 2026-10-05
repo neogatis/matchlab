@@ -63,6 +63,7 @@ class CompatibilityResultTests(unittest.TestCase):
             email=email,
             password_hash="x",
             referral_code=email.split("@")[0],
+            email_verified_at=self.now,
         )
         db.add(user)
         db.flush()
