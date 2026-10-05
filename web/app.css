@@ -2623,3 +2623,148 @@ button:disabled{cursor:default!important;opacity:.58!important}
   .candidate-utility-row{font-size:10px}
   .nav-btn{font-size:9px!important}
 }
+
+
+/* UI POLISH V18 — secondary surfaces */
+.status{
+  margin-top:10px;
+  border-radius:13px!important;
+  padding:10px 12px!important;
+  background:#F6F2FB!important;
+  color:#6E6178!important;
+  border:1px solid rgba(139,92,246,.08);
+  font-size:12px!important;
+}
+.status.error{
+  background:#FFF4F5!important;
+  border-color:#F3D4D9!important;
+  color:#A94557!important;
+}
+.progress-track{
+  height:6px!important;
+  background:#EEE8F5!important;
+}
+.progress-track.big{height:8px!important}
+.progress-track i{
+  background:linear-gradient(90deg,#A476F2,#7947DB)!important;
+}
+.waitlist-card{
+  max-width:700px!important;
+  padding:34px!important;
+  border-radius:23px!important;
+}
+.waitlist-mark{
+  width:70px!important;height:70px!important;
+  border-radius:20px!important;
+  font-size:31px!important;
+  box-shadow:0 12px 28px rgba(112,67,205,.18)!important;
+}
+.waitlist-stats{
+  gap:9px!important;
+}
+.waitlist-stats>div{
+  border-radius:15px!important;
+  background:#F9F6FC!important;
+  border:1px solid #ECE4F3!important;
+}
+.compatibility-overview-card,
+.compatibility-attention-card,
+.compatibility-reason,
+.compatibility-self{
+  border-radius:20px!important;
+  border-color:#E8E0F1!important;
+  box-shadow:0 10px 30px rgba(64,42,90,.045)!important;
+}
+.compatibility-overview-score strong{
+  color:#7546D3!important;
+}
+.compatibility-overall-track,
+.compatibility-mini-track{
+  background:#EFE9F6!important;
+}
+.compatibility-overall-track i,
+.compatibility-mini-track i{
+  background:linear-gradient(90deg,#A474F2,#7645D7)!important;
+}
+.compatibility-reason-icon{
+  border-radius:12px!important;
+  background:#F4EEFF!important;
+}
+.photo-manager-grid{gap:10px!important}
+.photo-manager-item{
+  border-radius:17px!important;
+  border-color:#E8E0F1!important;
+  background:#fff!important;
+  box-shadow:0 6px 18px rgba(63,40,86,.035)!important;
+}
+.photo-manager-item img{border-radius:13px!important}
+.setting-line{
+  padding:13px 0!important;
+  border-bottom-color:#EEE7F4!important;
+}
+.setting-line:last-child{border-bottom:0!important}
+.profile-subhead{
+  max-width:900px;
+  margin-left:auto!important;
+  margin-right:auto!important;
+}
+.tabs{
+  padding:4px!important;
+  border-radius:15px!important;
+  gap:4px!important;
+  background:#F3EEFA!important;
+}
+.tab{
+  min-height:42px!important;
+  border-radius:12px!important;
+  font-size:12px!important;
+}
+.tab.active{
+  color:#7142CC!important;
+  box-shadow:0 4px 12px rgba(62,41,84,.05)!important;
+}
+.empty{
+  border-radius:20px!important;
+  padding:30px 18px!important;
+}
+.empty .emoji{font-size:38px!important}
+.empty h3{font-size:23px!important;color:#342043!important}
+
+/* keep the photo-led auth screen, but align controls with the app */
+.auth-panel{
+  border-radius:24px!important;
+}
+.auth-card{
+  border-radius:19px!important;
+}
+.auth-card .input{
+  border-radius:13px!important;
+  min-height:52px!important;
+}
+.auth-card .primary,
+.auth-card .secondary{
+  border-radius:14px!important;
+  min-height:52px!important;
+}
+.auth-switch{
+  border-radius:15px!important;
+}
+.auth-switch .tab{border-radius:11px!important}
+
+/* stable touch targets */
+.candidate-detail-link,
+.safety-link,
+.auth-link-btn{
+  cursor:pointer;
+}
+@media(max-width:680px){
+  .waitlist-card{padding:22px 15px!important}
+  .compatibility-overview-card,
+  .compatibility-attention-card,
+  .compatibility-reason,
+  .compatibility-self{
+    border-radius:17px!important;
+  }
+  .settings-card{padding:16px!important}
+  .empty{padding:24px 14px!important}
+}
