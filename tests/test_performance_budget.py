@@ -22,7 +22,12 @@ class PerformanceBudgetTests(unittest.TestCase):
         self.now=datetime.now(timezone.utc)
 
     def seed_user(self,db,email,market_id,question_ids,answer=3):
-        u=User(email=email,password_hash="x",referral_code=email.split("@")[0])
+        u=User(
+            email=email,
+            password_hash="x",
+            referral_code=email.split("@")[0],
+            email_verified_at=self.now,
+        )
         db.add(u); db.flush()
         db.add(Profile(
             user_id=u.id,display_name=email.split("@")[0],dob=date(1997,1,1),
