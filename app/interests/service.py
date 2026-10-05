@@ -151,10 +151,21 @@ def _create_match(
             low_notification,
             high_notification,
             ProductEvent(
-                user_id=None,
+                user_id=low,
                 event_type="MUTUAL_MATCH_CREATED",
                 metadata_json={
                     "match_id": match.id,
+                    "other_user_id": high,
+                    "algorithm_version": match.algorithm_version,
+                },
+                created_at=now,
+            ),
+            ProductEvent(
+                user_id=high,
+                event_type="MUTUAL_MATCH_CREATED",
+                metadata_json={
+                    "match_id": match.id,
+                    "other_user_id": low,
                     "algorithm_version": match.algorithm_version,
                 },
                 created_at=now,

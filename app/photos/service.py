@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.analytics.events import EVENT_PHOTO_UPLOADED, track_event
+from app.analytics.events import EVENT_PHOTO_APPROVED, EVENT_PHOTO_UPLOADED, track_event
 from app.profile.service import recompute_profile_completion
 from app.db.models import (
     ModerationAction,
@@ -448,6 +448,14 @@ def moderate_photo(
     )
     db.flush()
     recompute_photo_completion(db, user_id=photo.user_id)
+    if status == "APPROVED":
+        track_event(
+            db,
+            event_type=EVENT_PHOTO_APPROVED,
+            user_id=photo.user_id,
+            metadata={"photo_id": photo.id},
+            now=now,
+        )
     return photo
 
 

@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.matching import service as matching
 from app.matching.config import CATEGORY_SECTIONS
+from app.preferences import service as preferences
 from app.questionnaire import service as questionnaire
 from app.questionnaire.catalog_v7 import V7_QUESTIONS
 
@@ -82,7 +83,12 @@ class MatchingEngineTests(unittest.TestCase):
         answer_value=3,
         updated_at=None,
     ):
-        user=User(email=email,password_hash="x",referral_code=email.split("@")[0])
+        user=User(
+            email=email,
+            password_hash="x",
+            referral_code=email.split("@")[0],
+            email_verified_at=self.now,
+        )
         db.add(user); db.flush()
         p=Profile(
             user_id=user.id,
@@ -166,6 +172,35 @@ class MatchingEngineTests(unittest.TestCase):
             self.assertGreaterEqual(result["final_mutual_fit_score"],0)
             self.assertLessEqual(result["final_mutual_fit_score"],100)
 
+    def test_unverified_contact_is_not_matchable(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M")
+            db.get(User,a).email_verified_at=None
+            db.commit()
+            result=matching.evaluate_pair(db,a,b)
+            self.assertFalse(result["eligible"])
+            self.assertEqual(result["reason"],"source_contact_unverified")
+
+    def test_configured_gender_ignore_overrides_legacy_seek_gender_filter(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="M",seek_gender="ANY")
+            self.pref(db,a,"gender","IGNORE")
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertTrue(result["eligible"],result)
+
+    def test_configured_gender_hard_still_filters(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="ANY")
+            b=self.add_user(db,email="b@example.com",gender="M",seek_gender="ANY")
+            self.pref(db,a,"gender","HARD",values=["F"])
+            db.commit()
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertFalse(result["eligible"])
+            self.assertEqual(result["reason"],"source_hard:gender")
+
     def test_one_sided_hard_age_conflict_blocks_pair(self):
         with Session(self.engine) as db:
             a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F",dob=date(1997,1,1))
@@ -242,6 +277,50 @@ class MatchingEngineTests(unittest.TestCase):
             lower=matching.evaluate_pair(db,a,b)
             self.assertTrue(lower["eligible"])
             self.assertLess(lower["mutual_preference_score"],good["mutual_preference_score"])
+
+    def test_any_soft_preference_is_neutral_and_not_scored(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M")
+            db.commit()
+            baseline=matching.mutual_preference_score(db,a,b)
+            self.assertEqual(baseline,50)
+
+            self.pref(db,a,"smoking","PREFERENCE",values=["ANY"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),baseline)
+
+    def test_any_market_and_religion_are_neutral(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="ANY",religion="islam")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="ANY",religion="christian")
+            self.pref(db,a,"market","PREFERENCE",values=["ANY"])
+            self.pref(db,a,"religion","PREFERENCE",values=["ANY"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),50)
+
+    def test_ignore_preference_is_not_in_soft_denominator(self):
+        with Session(self.engine) as db:
+            a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F",smoking="YES")
+            b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M",smoking="NO")
+            self.pref(db,a,"smoking","IGNORE",values=["NO"])
+            db.commit()
+            self.assertEqual(matching.mutual_preference_score(db,a,b),50)
+
+    def test_preference_service_normalizes_legacy_any_to_ignore(self):
+        with Session(self.engine) as db:
+            user_id=self.add_user(db,email="a@example.com")
+            db.commit()
+            row=preferences.set_preference(
+                db,
+                user_id=user_id,
+                key="smoking",
+                importance="PREFERENCE",
+                value=["ANY"],
+            )
+            db.commit()
+            self.assertEqual(row.importance,"IGNORE")
+            self.assertIsNone(row.values_json)
 
     def test_questionnaire_difference_changes_ranking(self):
         with Session(self.engine) as db:

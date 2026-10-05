@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.auth import service as auth
-from app.db.models import AuthChallenge, Session as DbSession, User
+from app.db.models import AuthChallenge, MarketingAttribution, Session as DbSession, User
 
 
 def legacy_hash(password: str) -> str:
@@ -42,6 +42,30 @@ class AuthServiceTests(unittest.TestCase):
             ok, rehash = auth.verify_password("very-secure-password", user.password_hash)
             self.assertTrue(ok)
             self.assertFalse(rehash)
+
+    def test_registration_persists_first_touch_attribution(self):
+        with Session(self.engine) as db:
+            user = auth.register_email_user(
+                db,
+                "utm@example.com",
+                "very-secure-password",
+                attribution={
+                    "utm_source": "meta",
+                    "utm_medium": "paid_social",
+                    "utm_campaign": "almaty_launch",
+                    "utm_content": "video_01",
+                    "utm_term": "serious_dating",
+                    "referral_input": "friend-code",
+                },
+            )
+            db.commit()
+            row = db.get(MarketingAttribution, user.id)
+            self.assertEqual(row.utm_source, "meta")
+            self.assertEqual(row.utm_medium, "paid_social")
+            self.assertEqual(row.utm_campaign, "almaty_launch")
+            self.assertEqual(row.utm_content, "video_01")
+            self.assertEqual(row.utm_term, "serious_dating")
+            self.assertEqual(row.referral_input, "friend-code")
 
     def test_legacy_password_is_transparently_upgraded(self):
         with Session(self.engine) as db:

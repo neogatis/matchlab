@@ -139,6 +139,21 @@ def set_preference(
         raise PreferenceError("Profile not found")
 
     importance = _validate_importance(importance)
+
+    # "ANY" is a legacy representation of "not important". Treat it as
+    # IGNORE defensively so it can never earn compatibility points.
+    spec = PREFERENCE_CATALOG[key]
+    if (
+        importance != "IGNORE"
+        and spec["kind"] in {"multi", "multi_text"}
+        and isinstance(value, list)
+    ):
+        normalized_any = [str(item).strip().upper() for item in value if str(item).strip()]
+        if "ANY" in normalized_any and len(normalized_any) > 1:
+            raise InvalidPreference("ANY cannot be combined with other options")
+        if normalized_any == ["ANY"]:
+            importance = "IGNORE"
+
     normalized: dict[str, Any] = {}
     if importance != "IGNORE":
         normalized = _validate_payload(db, key, value)

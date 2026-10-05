@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -50,7 +50,13 @@ class PrelaunchServiceTests(unittest.TestCase):
             ]
 
     def add_ready_user(self,db,email,*,gender="M",seek_gender="ANY",answer=3):
-        user=User(email=email,password_hash="x",referral_code=email.split("@")[0],status="ACTIVE")
+        user=User(
+            email=email,
+            password_hash="x",
+            referral_code=email.split("@")[0],
+            status="ACTIVE",
+            email_verified_at=datetime.now(timezone.utc),
+        )
         db.add(user); db.flush()
         db.add(Profile(
             user_id=user.id,display_name=email.split("@")[0],dob=date(1997,5,30),
