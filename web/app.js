@@ -134,16 +134,26 @@
     state.poller = null;
   }
 
+  function navIcon(key){
+    const icons={
+      home:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.8 12 3.8l8.5 7v8.4a1.8 1.8 0 0 1-1.8 1.8H5.3a1.8 1.8 0 0 1-1.8-1.8Z"/><path d="M9.2 21v-6.7h5.6V21"/></svg>',
+      matches:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.9a5.2 5.2 0 0 0-7.4 0L12 6.3l-1.4-1.4a5.2 5.2 0 0 0-7.4 7.4L12 21l8.8-8.7a5.2 5.2 0 0 0 0-7.4Z"/></svg>',
+      chats:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.3a8.2 8.2 0 0 1-8.6 8.2 9 9 0 0 1-3.6-.8L3.5 21l1.4-4.1A8.1 8.1 0 1 1 20.5 11.3Z"/></svg>',
+      profile:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.6 21c.7-4.2 3.4-6.5 7.4-6.5s6.7 2.3 7.4 6.5"/></svg>',
+    };
+    return icons[key]||"";
+  }
+
   function nav(active) {
     const items = [
-      ["home","⌂","Главная"],
-      ["matches","♡","Совпадения"],
-      ["chats","◌","Чаты"],
-      ["profile","♙","Профиль"],
+      ["home","Главная"],
+      ["matches","Совпадения"],
+      ["chats","Чаты"],
+      ["profile","Профиль"],
     ];
-    return '<nav class="bottom-nav">' + items.map(([key, icon, label]) =>
+    return '<nav class="bottom-nav">' + items.map(([key,label]) =>
       '<button class="nav-btn ' + (active===key?"active":"") + '" data-route="' + key + '">' +
-      '<i>' + icon + '</i><span>' + label + '</span></button>'
+      '<i>' + navIcon(key) + '</i><span>' + label + '</span></button>'
     ).join("") + '</nav>';
   }
 
@@ -189,35 +199,34 @@
   function renderAuth(mode="login") {
     clearPoller();
     const register = mode === "register";
-    root.innerHTML = '<main class="auth-screen">' +
-      '<img class="auth-hero-photo" src="/web/hero.jpg?v=14" alt="" aria-hidden="true">' +
-      '<div class="auth-wrap">' +
-        '<div class="auth-logo"><div class="brand-mark">♡</div><div class="brand">Match<span>Lab</span></div></div>' +
-        '<div class="auth-tagline">' +
-          '<div class="eyebrow">Знакомства по совместимости</div>' +
-          '<h1>Не выбирай из всех.<br><span style="color:#ff5d6c">Найди подходящего.</span></h1>' +
-          '<p>Общие ценности, реальные люди и серьёзные намерения.</p>' +
-        '</div>' +
-        '<div class="auth-panel">' +
+    root.innerHTML = '<main class="auth-screen auth-v19">' +
+      '<div class="auth-v19-decor auth-v19-decor-a"></div><div class="auth-v19-decor auth-v19-decor-b"></div>' +
+      '<div class="auth-wrap auth-v19-wrap">' +
+        '<header class="auth-v19-header">' +
+          '<div class="auth-logo auth-v19-logo"><div class="brand">Match<span>Lab</span></div></div>' +
+          '<div class="auth-tagline auth-v19-tagline">' +
+            '<h1>Не выбирай из всех.<br><span>Найди подходящего.</span></h1>' +
+            '<p>Общие ценности, реальные люди и серьёзные намерения.</p>' +
+          '</div>' +
+        '</header>' +
+        '<div class="auth-panel auth-v19-panel">' +
           '<div class="tabs auth-switch">' +
             '<button class="tab ' + (!register?"active":"") + '" id="auth-login-tab">Вход</button>' +
             '<button class="tab ' + (register?"active":"") + '" id="auth-register-tab">Регистрация</button>' +
           '</div>' +
-          '<section class="auth-card">' +
-            '<div class="eyebrow">' + (register?"Новый профиль":"С возвращением") + '</div>' +
-            '<h2 style="font-family:Georgia,serif;font-size:30px;line-height:1.04;margin:7px 0 8px">' +
-              (register?"Создайте аккаунт":"Войдите в MatchLab") +
-            '</h2>' +
-            '<p class="muted" style="margin:0 0 18px">' +
+          '<section class="auth-card auth-v19-card">' +
+            '<div class="eyebrow">' + (register?"НОВЫЙ ПРОФИЛЬ":"С ВОЗВРАЩЕНИЕМ") + '</div>' +
+            '<h2>' + (register?"Создайте аккаунт":"Войдите в MatchLab") + '</h2>' +
+            '<p class="muted">' +
               (register
                 ?"Регистрация займёт пару минут. Затем начнём анкету совместимости."
                 :"По SMS-коду или телефону/email и паролю.") +
             '</p>' +
             (register ? registerForm() : loginForm()) +
-            '<div id="form-status" class="status" hidden style="margin-top:14px"></div>' +
+            '<div id="form-status" class="status" hidden></div>' +
           '</section>' +
         '</div>' +
-        '<p class="auth-legal muted" style="font-size:11px;text-align:center;margin:13px 18px 0">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>. Профиль не публикуется до завершения анкеты и проверки фотографий.</p>' +
+        '<p class="auth-legal muted">18+. Продолжая, вы принимаете <a href="/terms" target="_blank" rel="noopener">Условия</a> и <a href="/privacy" target="_blank" rel="noopener">Политику конфиденциальности</a>.</p>' +
       '</div>' +
     '</main>';
     document.getElementById("auth-login-tab").onclick = () => renderAuth("login");
@@ -227,19 +236,19 @@
   }
 
   function loginForm() {
-    return '<div class="tabs" id="login-method-tabs">' +
+    return '<div class="tabs auth-method-tabs" id="login-method-tabs">' +
       '<button class="tab active" data-login-method="password">Пароль</button>' +
       '<button class="tab" data-login-method="sms">SMS-код</button>' +
     '</div>' +
-    '<div id="login-password" class="form-stack">' +
-      '<input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username">' +
-      '<input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password">' +
+    '<div id="login-password" class="form-stack auth-form-stack">' +
+      '<label class="auth-input-wrap"><span class="auth-input-icon">✉</span><input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username"></label>' +
+      '<label class="auth-input-wrap"><span class="auth-input-icon">⌑</span><input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password"></label>' +
       '<button class="primary full" id="password-login-btn">Войти →</button>' +
       '<button class="ghost full auth-link-btn" id="forgot-password-btn" type="button">Забыли пароль?</button>' +
     '</div>' +
-    '<div id="login-sms" class="form-stack" hidden>' +
-      '<input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel">' +
-      '<button class="primary full" id="sms-request-btn">Получить код →</button>' +
+    '<div id="login-sms" class="form-stack auth-form-stack" hidden>' +
+      '<label class="auth-input-wrap"><span class="auth-input-icon">⌕</span><input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel"></label>' +
+      '<button class="primary full" id="sms-request-btn">Получить SMS-код →</button>' +
       '<input class="input" id="sms-code" placeholder="6-значный код" inputmode="numeric" hidden>' +
       '<input class="input" id="sms-new-password" type="password" placeholder="Задать пароль — необязательно" hidden>' +
       '<button class="primary full" id="sms-verify-btn" hidden>Войти →</button>' +
@@ -913,19 +922,22 @@
     clearPoller(); loading("chats");
     try { state.conversations=(await api("/api/v1/chat/conversations")).conversations||[]; }
     catch { state.conversations=[]; }
-    root.innerHTML='<main class="page">'+topbar("Сообщения")+
-      '<div class="section-head"><div><div class="eyebrow">Общение</div><h2>Ваши чаты</h2></div></div>'+
+    root.innerHTML='<main class="page chats-page">'+
+      '<header class="chats-hero"><div><div class="eyebrow">MATCHLAB</div><h1>Сообщения</h1><p>Общайся, узнавай друг друга и находи близких по духу людей.</p></div><button class="icon-btn chats-refresh" id="refresh-btn" aria-label="Обновить">↻</button></header>'+
+      '<div class="chats-section-title">Ваши чаты</div>'+
       (state.conversations.length
-        ? '<div class="grid">'+state.conversations.map(c=>{
-          const p=c.profile||{};
-          const last=c.last_message;
-          return '<button class="card match-card" style="text-align:left;width:100%;border:1px solid var(--border)" data-open-chat="'+c.conversation_id+'">'+
-            photo(p)+'<div class="match-main"><h3>'+esc(c.other_display_name||p.display_name||"Профиль")+'</h3>'+
-            '<div class="muted line-clamp">'+esc(last?.body||"Начните общение")+'</div></div>'+
-            (c.unread_count?'<span class="badge">'+esc(c.unread_count)+'</span>':'')+
+        ? '<div class="chat-list">'+state.conversations.map(conv=>{
+          const p=conv.profile||{};
+          const last=conv.last_message;
+          const time=last?.created_at ? String(last.created_at).slice(11,16) : "";
+          return '<button class="chat-list-item" data-open-chat="'+conv.conversation_id+'">'+
+            '<div class="chat-list-avatar-wrap">'+photo(p,"chat-list-avatar")+'<span class="chat-online-dot"></span></div>'+
+            '<div class="chat-list-copy"><b>'+esc(conv.other_display_name||p.display_name||"Профиль")+'</b><span>'+esc(last?.body||"Начните общение")+'</span></div>'+
+            '<div class="chat-list-meta">'+(time?'<time>'+esc(time)+'</time>':'')+(conv.unread_count?'<span class="badge">'+esc(conv.unread_count)+'</span>':'')+'</div>'+
+            '<span class="chat-list-arrow">›</span>'+
           '</button>';
         }).join("")+'</div>'
-        : '<section class="card empty"><div class="emoji">◌</div><h3>Пока нет диалогов</h3><p class="muted">После взаимного интереса здесь появится ваш чат.</p><button class="primary" data-route="matches">Совпадения</button></section>')+
+        : '<section class="card empty"><div class="emoji">♡</div><h3>Пока нет диалогов</h3><p class="muted">После взаимного интереса здесь появится ваш чат.</p><button class="primary" data-route="matches">Совпадения</button></section>')+
     '</main>'+nav("chats");
     bindCommon();
     document.querySelectorAll("[data-open-chat]").forEach(btn=>btn.onclick=()=>{
@@ -1551,25 +1563,25 @@
       ? '<img class="profile-avatar-large" src="'+esc(mainPhoto.url)+'" alt="Фото профиля">'
       : '<div class="profile-avatar-large profile-avatar-empty">♡</div>';
 
-    root.innerHTML='<main class="page profile-page">'+topbar("Профиль")+
-      '<section class="card profile-overview">'+
-        '<div class="profile-overview-main">'+photoHtml+
-          '<div><div class="eyebrow">Ваш профиль</div><h1>'+esc(p.display_name||"MatchLab")+(age?", "+age:"")+'</h1>'+
-          '<p class="muted">'+esc(p.city||"Алматы")+'</p>'+
-          '<span class="profile-state">'+esc(statusLabels[p.relationship_status]||"Настройте статус знакомств")+'</span></div>'+
+    root.innerHTML='<main class="page profile-page profile-v19">'+
+      '<section class="profile-v19-hero">'+
+        '<div class="profile-v19-person">'+
+          '<div class="profile-v19-avatar-wrap">'+photoHtml+'<button class="profile-avatar-edit" data-route="photos" aria-label="Изменить фото">✎</button></div>'+
+          '<div class="profile-v19-person-copy"><h1>'+esc(p.display_name||"MatchLab")+(age?", "+age:"")+'</h1><p class="profile-location">⌖ '+esc(p.city||"Город не указан")+'</p><span class="profile-state"><i></i>'+esc(statusLabels[p.relationship_status]||"Настройте статус знакомств")+'</span></div>'+
         '</div>'+
-        '<div class="profile-completion"><div class="profile-completion-copy"><b>Профиль заполнен на '+pct+'%</b><span>'+esc(waitlist.message||"Заполненный профиль помогает подобрать более совместимых людей.")+'</span></div>'+
-        '<div class="progress-track big"><i style="width:'+pct+'%"></i></div></div>'+
-        (pct<100?'<button class="primary full" data-route="onboarding">Продолжить анкету →</button>':
-          '<button class="secondary full" data-route="onboarding">Статус листа ожидания</button>')+
+        '<div class="profile-v19-completion">'+
+          '<div class="profile-v19-completion-head"><div><b>Профиль заполнен на '+pct+'%</b><span>'+esc(waitlist.message||"Завершите профиль, чтобы подбор был точнее.")+'</span></div><strong>'+pct+'%</strong></div>'+
+          '<div class="progress-track big"><i style="width:'+pct+'%"></i></div>'+
+          (pct<100?'<button class="primary full" data-route="onboarding">Продолжить анкету →</button>':'<button class="secondary full" data-route="onboarding">Статус листа ожидания</button>')+
+        '</div>'+
       '</section>'+
-      '<section class="profile-menu-section"><div class="profile-menu-heading"><span>Профиль и подбор</span><small>Настройте себя и то, кого хотите встретить</small></div><div class="profile-menu">'+
+      '<section class="profile-menu-section profile-v19-section"><div class="profile-menu-heading"><span>Профиль и подбор</span><small>Настройте себя и того, кого хотите встретить</small></div><div class="profile-menu profile-v19-menu">'+
         profileMenuRow("👤","Редактировать профиль","Имя, о себе, образ жизни","profile-edit")+
         profileMenuRow("🎯","Кого я ищу","Возраст, цели и важные критерии","preferences")+
         profileMenuRow("🧠","Моя совместимость","Ваши приоритеты по анкете","compatibility",c.questionnaire?"Готово":"")+
         profileMenuRow("📷","Мои фотографии","Главное фото и порядок","photos",(photoData.progress?.approved||0)+"/2")+
       '</div></section>'+
-      '<section class="profile-menu-section"><div class="profile-menu-heading"><span>Аккаунт и безопасность</span><small>Статус, уведомления и управление аккаунтом</small></div><div class="profile-menu">'+
+      '<section class="profile-menu-section profile-v19-section"><div class="profile-menu-heading"><span>Аккаунт и безопасность</span></div><div class="profile-menu profile-v19-menu">'+
         profileMenuRow("❤️","Статус знакомств","Активность и пауза","dating-status")+
         profileMenuRow("🔔","Уведомления","Push и разрешения","notifications")+
         profileMenuRow("🛡","Безопасность","Блокировки и жалобы","safety")+
