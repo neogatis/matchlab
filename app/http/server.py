@@ -734,11 +734,16 @@ def _candidate_profile_payload(
         raise ApiError(HTTPStatus.NOT_FOUND, "profile_not_found")
     market = db.get(Market, profile.market_id) if profile.market_id is not None else None
     age = user_age(profile.dob) if profile.dob is not None else None
+    photos = _candidate_photo_urls(db, user_id)
+    test_meta = _test_profile_meta(db, user_id)
+    if not photos and test_meta and test_meta.get("photo"):
+        photos = [test_meta["photo"]]
+
     result: dict[str, Any] = {
         "user_id": user_id,
         "display_name": profile.display_name,
         "age": age,
-        "city": profile.city or (market.name if market else ""),
+        "city": profile.city or (market.display_name if market else ""),
         "dating_goal": profile.dating_goal,
         "bio": profile.bio,
         "height": profile.height,
@@ -748,7 +753,7 @@ def _candidate_profile_payload(
         "alcohol": profile.alcohol,
         "lifestyle": profile.lifestyle,
         "religion": profile.religion,
-        "photos": _candidate_photo_urls(db, user_id),
+        "photos": photos,
     }
     if scoring:
         result.update(
