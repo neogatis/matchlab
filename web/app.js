@@ -655,12 +655,14 @@
         '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div>' + (c.is_test_profile?'<span class="test-profile-badge">Тестовый профиль</span>':'') + '</div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
-        '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее о человеке →</button>' +
         '<div class="actions candidate-actions">' +
-          '<button class="secondary candidate-reject" data-candidate-skip="' + c.user_id + '">Не мой человек</button>' +
           '<button class="primary" data-candidate-like="' + c.user_id + '">Хочу познакомиться</button>' +
+          '<button class="secondary candidate-reject" data-candidate-skip="' + c.user_id + '">Пока не подходит</button>' +
         '</div>' +
-        '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Пожаловаться или заблокировать</button>' +
+        '<div class="candidate-utility-row">' +
+          '<button class="candidate-detail-link" data-candidate-detail="' + c.user_id + '">Подробнее</button>' +
+          '<button class="safety-link" data-candidate-safety="' + c.user_id + '">Безопасность</button>' +
+        '</div>' +
       '</div>' +
     '</article>';
   }
@@ -745,7 +747,7 @@
           else renderHome();
         }catch(e){
           btn.disabled=false;
-          btn.textContent="Не мой человек";
+          btn.textContent="Пока не подходит";
           alert("Не удалось учесть выбор: "+e.message);
         }
       };
