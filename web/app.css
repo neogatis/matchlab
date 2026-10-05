@@ -53,7 +53,7 @@ textarea.input{min-height:100px;resize:vertical}
   position:relative;
   min-height:100dvh;
   overflow:auto;
-  background:#18121a url("/web/hero.jpg") center 32%/cover no-repeat fixed;
+  background:#F7F4FF;
 }
 .auth-screen::before{
   content:"";
