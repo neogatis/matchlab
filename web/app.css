@@ -53,7 +53,7 @@ textarea.input{min-height:100px;resize:vertical}
   position:relative;
   min-height:100dvh;
   overflow:auto;
-  background:#18121a url("/web/hero.jpg") center 32%/cover no-repeat fixed;
+  background:#F7F4FF;
 }
 .auth-screen::before{
   content:"";
@@ -978,176 +978,6 @@ body{background:var(--bg)}
   .profile-menu{grid-template-columns:1fr!important}
   .profile-overview{padding:22px 16px!important}
   .profile-overview-main h1{font-size:29px!important}
-}
-
-
-/* AUTH HERO PHOTO HOTFIX V14 */
-.auth-screen{
-  background:#171020!important;
-}
-.auth-hero-photo{
-  position:fixed;
-  inset:0;
-  z-index:-3;
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  object-position:center 40%;
-  display:block;
-  filter:saturate(.96) contrast(1.02);
-}
-.auth-screen::before{
-  z-index:-2!important;
-  background:
-    linear-gradient(90deg,rgba(16,10,28,.70) 0%,rgba(22,14,38,.48) 38%,rgba(20,13,34,.10) 64%,rgba(18,11,31,.34) 100%),
-    linear-gradient(180deg,rgba(15,9,27,.03) 0%,rgba(15,9,27,.12) 55%,rgba(13,8,24,.60) 100%),
-    radial-gradient(circle at 78% 25%,rgba(143,105,255,.16),transparent 35%)!important;
-}
-@media(max-width:760px){
-  .auth-hero-photo{
-    object-position:58% center;
-  }
-}
-
-
-/* AUTH HERO LAYERING FIX V15 */
-.auth-screen{
-  position:relative!important;
-  isolation:isolate!important;
-  background:#171020!important;
-}
-.auth-hero-photo{
-  position:fixed!important;
-  inset:0!important;
-  z-index:0!important;
-  width:100%!important;
-  height:100%!important;
-  object-fit:cover!important;
-  object-position:center 40%!important;
-  display:block!important;
-  opacity:1!important;
-  visibility:visible!important;
-  pointer-events:none!important;
-}
-.auth-screen::before{
-  z-index:1!important;
-}
-.auth-wrap{
-  position:relative!important;
-  z-index:2!important;
-}
-@media(max-width:760px){
-  .auth-hero-photo{object-position:58% center!important}
-}
-
-
-/* AUTH HERO NO-CROP + MOBILE FLOW V17 */
-.auth-screen{
-  background:
-    linear-gradient(rgba(23,16,32,.28),rgba(23,16,32,.28)),
-    url("/web/hero.jpg?v=17") center center/cover no-repeat fixed!important;
-}
-.auth-hero-photo{
-  object-fit:contain!important;
-  object-position:center center!important;
-  width:100vw!important;
-  height:100vh!important;
-  max-width:none!important;
-  max-height:none!important;
-}
-
-@media(max-width:900px){
-  .auth-screen{
-    overflow-y:auto!important;
-    min-height:100dvh!important;
-    background-position:center center!important;
-    background-attachment:scroll!important;
-  }
-  .auth-hero-photo{
-    object-fit:contain!important;
-    object-position:center center!important;
-  }
-  .auth-wrap{
-    display:block!important;
-    width:min(100%,560px)!important;
-    min-height:auto!important;
-    margin:0 auto!important;
-    padding:calc(18px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom))!important;
-  }
-  .auth-logo{
-    position:relative!important;
-    top:auto!important;
-    left:auto!important;
-    right:auto!important;
-    margin:0 0 clamp(130px,28vh,230px)!important;
-    text-align:center!important;
-  }
-  .auth-tagline{
-    position:relative!important;
-    width:100%!important;
-    margin:0 0 16px!important;
-    padding:0 4px!important;
-  }
-  .auth-tagline h1{
-    max-width:100%!important;
-    margin:0 0 10px!important;
-    font-size:clamp(29px,8.8vw,38px)!important;
-    line-height:1.02!important;
-    letter-spacing:-1px!important;
-  }
-  .auth-tagline p{
-    max-width:100%!important;
-    margin:0!important;
-    font-size:14px!important;
-    line-height:1.45!important;
-  }
-  .auth-panel{
-    position:relative!important;
-    width:100%!important;
-    margin:0!important;
-  }
-  .auth-legal{
-    position:relative!important;
-    margin:12px 12px 0!important;
-    transform:none!important;
-    line-height:1.45!important;
-  }
-}
-@media(max-width:430px){
-  .auth-logo{
-    margin-bottom:clamp(105px,23vh,180px)!important;
-  }
-  .auth-logo .brand{
-    font-size:30px!important;
-  }
-  .auth-tagline{
-    margin-bottom:12px!important;
-  }
-  .auth-tagline h1{
-    font-size:28px!important;
-    line-height:1.04!important;
-  }
-  .auth-tagline p{
-    font-size:13px!important;
-  }
-  .auth-card h2{
-    font-size:25px!important;
-    line-height:1.08!important;
-  }
-}
-@media(max-width:430px) and (max-height:720px){
-  .auth-logo{
-    margin-bottom:86px!important;
-  }
-  .auth-tagline h1{
-    font-size:25px!important;
-  }
-  .auth-tagline p{
-    font-size:12px!important;
-  }
-  .auth-card{
-    padding:14px!important;
-  }
 }
 
 
@@ -2729,27 +2559,6 @@ button:disabled{cursor:default!important;opacity:.58!important}
 }
 .empty .emoji{font-size:38px!important}
 .empty h3{font-size:23px!important;color:#342043!important}
-
-/* keep the photo-led auth screen, but align controls with the app */
-.auth-panel{
-  border-radius:24px!important;
-}
-.auth-card{
-  border-radius:19px!important;
-}
-.auth-card .input{
-  border-radius:13px!important;
-  min-height:52px!important;
-}
-.auth-card .primary,
-.auth-card .secondary{
-  border-radius:14px!important;
-  min-height:52px!important;
-}
-.auth-switch{
-  border-radius:15px!important;
-}
-.auth-switch .tab{border-radius:11px!important}
 
 /* stable touch targets */
 .candidate-detail-link,
