@@ -241,13 +241,13 @@
       '<button class="tab" data-login-method="sms">SMS-код</button>' +
     '</div>' +
     '<div id="login-password" class="form-stack auth-form-stack">' +
-      '<label class="auth-input-wrap"><span class="auth-input-icon">✉</span><input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username"></label>' +
-      '<label class="auth-input-wrap"><span class="auth-input-icon">⌑</span><input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password"></label>' +
+      '<label class="auth-input-wrap"><input class="input" id="login-identifier" placeholder="Телефон или email" autocomplete="username"></label>' +
+      '<label class="auth-input-wrap"><input class="input" id="login-password-value" type="password" placeholder="Пароль" autocomplete="current-password"></label>' +
       '<button class="primary full" id="password-login-btn">Войти →</button>' +
       '<button class="ghost full auth-link-btn" id="forgot-password-btn" type="button">Забыли пароль?</button>' +
     '</div>' +
     '<div id="login-sms" class="form-stack auth-form-stack" hidden>' +
-      '<label class="auth-input-wrap"><span class="auth-input-icon">⌕</span><input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel"></label>' +
+      '<label class="auth-input-wrap"><input class="input" id="sms-phone" placeholder="+7 747 123 45 67" inputmode="tel"></label>' +
       '<button class="primary full" id="sms-request-btn">Получить SMS-код →</button>' +
       '<input class="input" id="sms-code" placeholder="6-значный код" inputmode="numeric" hidden>' +
       '<input class="input" id="sms-new-password" type="password" placeholder="Задать пароль — необязательно" hidden>' +
