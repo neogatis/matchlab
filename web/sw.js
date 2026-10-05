@@ -1,5 +1,5 @@
-const CACHE="matchlab-shell-v20";
-const SHELL=["/","/web/app.css?v=20","/web/app.js?v=20","/web/icon.svg","/web/onboarding.css?v=20"];
+const CACHE="matchlab-shell-v21";
+const SHELL=["/","/web/app.css?v=21","/web/app.js?v=21","/web/icon.svg","/web/onboarding.css?v=21","/web/final.css?v=21"];
 self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)))});
 self.addEventListener("activate",e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))])));
 self.addEventListener("fetch",e=>{
