@@ -552,6 +552,24 @@ def moderate_photo(
             "VERIFIED" if status == "APPROVED" else "REJECTED"
         )
         profile.identity_verified_at = now if status == "APPROVED" else None
+
+        # Verification selfies are private review artifacts, not profile media.
+        # After a moderation decision, remove the object asynchronously while
+        # keeping the verification result and moderation reason.
+        if photo.storage_key:
+            existing = db.execute(
+                select(PhotoObjectDeletion).where(
+                    PhotoObjectDeletion.object_key == photo.storage_key
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                db.add(
+                    PhotoObjectDeletion(
+                        object_key=photo.storage_key,
+                        status="PENDING",
+                    )
+                )
+            photo.storage_key = None
         db.flush()
     else:
         recompute_photo_completion(db, user_id=photo.user_id)
