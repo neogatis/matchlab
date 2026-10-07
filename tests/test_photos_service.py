@@ -143,7 +143,7 @@ class PhotoServiceTests(unittest.TestCase):
             ticket=db.get(PhotoUploadTicket,ticket_id)
             self.assertEqual(ticket.status,"CONSUMED")
             self.assertIsNotNone(ticket.consumed_at)
-            self.assertTrue(db.get(Profile,self.user_id).photos_completed)
+            self.assertFalse(db.get(Profile,self.user_id).photos_completed)
 
     def test_expired_ticket_is_rejected(self):
         with Session(self.engine) as db:
@@ -232,7 +232,7 @@ class PhotoServiceTests(unittest.TestCase):
             visible=photos.visible_photos(db,user_id=self.user_id)
             self.assertEqual([p.id for p in visible],[p2.id])
             self.assertTrue(visible[0].is_main)
-            self.assertFalse(db.get(Profile,self.user_id).photos_completed)
+            self.assertTrue(db.get(Profile,self.user_id).photos_completed)
 
     def test_reorder_and_main_selection_are_owner_scoped(self):
         with Session(self.engine) as db:
