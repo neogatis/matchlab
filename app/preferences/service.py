@@ -129,6 +129,8 @@ def set_preference(
     importance: str,
     value: Any = None,
     now: datetime | None = None,
+    recompute: bool = True,
+    flush: bool = True,
 ) -> PartnerPreference:
     now = now or utcnow()
     if key not in PREFERENCE_CATALOG:
@@ -183,8 +185,10 @@ def set_preference(
         row.values_json = normalized["values"]
 
     row.updated_at = now
-    db.flush()
-    recompute_completion(db, user_id=user_id)
+    if flush:
+        db.flush()
+    if recompute:
+        recompute_completion(db, user_id=user_id)
     return row
 
 
@@ -196,6 +200,7 @@ def set_preferences(
 ) -> dict[str, Any]:
     if not isinstance(preferences, dict):
         raise InvalidPreference("Preferences must be an object")
+    now = utcnow()
     for key, config in preferences.items():
         if not isinstance(config, dict):
             raise InvalidPreference("Preference configuration must be an object")
@@ -205,7 +210,15 @@ def set_preferences(
             key=key,
             importance=config.get("importance", ""),
             value=config.get("value"),
+            now=now,
+            recompute=False,
+            flush=False,
         )
+
+    # One flush + one completion/profile recompute for the whole form.
+    # Previously this happened once per criterion, multiplying DB work.
+    db.flush()
+    recompute_completion(db, user_id=user_id)
     return completion(db, user_id=user_id)
 
 
