@@ -164,7 +164,7 @@ class ChatMediaServiceTests(unittest.TestCase):
                 kind="voice",
             )
             self.storage.objects[prepared["object_key"]] = (
-                b"\x1a\x45\xdf\xa3" + b"voice-data",
+                b"\x1a\x45\xdf\xa3" + b"0" * 20,
                 "audio/webm",
             )
             message = chat.send_message(
