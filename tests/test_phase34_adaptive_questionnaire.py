@@ -183,6 +183,39 @@ class Phase34AdaptiveQuestionnaireTests(unittest.TestCase):
             self.assertEqual(total_min, 35)
             self.assertEqual(total_max, 50)
 
+    def test_prefetch_keeps_next_question_ready(self):
+        with Session(self.engine) as db:
+            state = adaptive.state(db, user_id=self.user_id)
+            while state["phase"] == "BASE":
+                state = adaptive.answer(
+                    db,
+                    user_id=self.user_id,
+                    question_token=state["question"]["token"],
+                    value=4,
+                )
+
+            self.assertEqual(state["phase"], "ADAPTIVE")
+            first = adaptive._unanswered_generated(db, self.user_id)
+            self.assertEqual(len(first), 1)
+
+            prefetched = adaptive.prefetch(db, user_id=self.user_id)
+            self.assertEqual(prefetched["phase"], "ADAPTIVE")
+            pending = adaptive._unanswered_generated(db, self.user_id)
+            self.assertEqual(len(pending), 2)
+            current_id, next_id = pending[0].id, pending[1].id
+
+            state = adaptive.answer(
+                db,
+                user_id=self.user_id,
+                question_token=f"adaptive:{current_id}",
+                value=5,
+            )
+            self.assertEqual(state["phase"], "ADAPTIVE")
+            pending_after = adaptive._unanswered_generated(db, self.user_id)
+            self.assertEqual(len(pending_after), 1)
+            self.assertEqual(pending_after[0].id, next_id)
+            self.assertEqual(state["question"]["token"], f"adaptive:{next_id}")
+
     def test_adaptive_scores_are_comparable_on_fixed_axes(self):
         with Session(self.engine) as db:
             state = adaptive.state(db, user_id=self.user_id)
