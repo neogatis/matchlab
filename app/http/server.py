@@ -2205,11 +2205,17 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                                 "user_id": photo.user_id,
                                 "mime": photo.mime,
                                 "byte_size": photo.byte_size,
+                                "purpose": photo.purpose,
                                 "is_main": photo.is_main,
                                 "created_at": photo.created_at,
                                 "url": storage.presign_download(photo.storage_key)
                                 if photo.storage_key
                                 else None,
+                                "profile_photos": (
+                                    _candidate_photo_urls(db, photo.user_id)
+                                    if photo.purpose == PHOTO_PURPOSE_IDENTITY
+                                    else []
+                                ),
                             }
                             for photo in rows
                         ]
