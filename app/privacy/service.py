@@ -9,6 +9,7 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.service import login_bucket
+from app.chat.media import decode_media_body
 from app.db.models import (
     AdminAccount,
     AuditLog,
@@ -17,6 +18,7 @@ from app.db.models import (
     AuthOutbox,
     AuthRateLimit,
     Block,
+    ChatMediaUploadTicket,
     Consent,
     DataRequest,
     Interest,
@@ -435,6 +437,8 @@ def _purge_one(
         ).scalars()
     ]
     message_ids: list[int] = []
+    conversation_ids: list[int] = []
+    chat_media_keys: set[str] = set()
     if match_ids:
         from app.db.models import Conversation
 
@@ -444,11 +448,23 @@ def _purge_one(
             ).scalars()
         )
         if conversation_ids:
-            message_ids = list(
+            message_rows = list(
                 db.execute(
-                    select(Message.id).where(Message.conversation_id.in_(conversation_ids))
+                    select(Message).where(Message.conversation_id.in_(conversation_ids))
                 ).scalars()
             )
+            message_ids = [row.id for row in message_rows]
+            for message in message_rows:
+                media = decode_media_body(message.body)
+                if media and media.get("object_key"):
+                    chat_media_keys.add(str(media["object_key"]))
+
+            ticket_keys = db.execute(
+                select(ChatMediaUploadTicket.object_key).where(
+                    ChatMediaUploadTicket.conversation_id.in_(conversation_ids)
+                )
+            ).scalars()
+            chat_media_keys.update(str(key) for key in ticket_keys if key)
 
     report_conditions = [
         Report.reporter == user_id,
@@ -468,7 +484,7 @@ def _purge_one(
             )
         )
 
-    for object_key in photo_keys:
+    for object_key in [*photo_keys, *sorted(chat_media_keys)]:
         existing = db.execute(
             select(PhotoObjectDeletion).where(
                 PhotoObjectDeletion.object_key == object_key
@@ -489,6 +505,7 @@ def _purge_one(
         (LegacyPartnerCriteria, LegacyPartnerCriteria.user_id == user_id),
         (PartnerPreference, PartnerPreference.user_id == user_id),
         (PhotoUploadTicket, PhotoUploadTicket.user_id == user_id),
+        (ChatMediaUploadTicket, ChatMediaUploadTicket.user_id == user_id),
         (Photo, Photo.user_id == user_id),
         (Interest, or_(Interest.from_user == user_id, Interest.to_user == user_id)),
         (Match, or_(Match.user1 == user_id, Match.user2 == user_id)),
@@ -558,6 +575,7 @@ def _purge_one(
             target_id=str(request.id),
             metadata_json={
                 "photo_objects_queued": len(photo_keys),
+                "chat_media_objects_queued": len(chat_media_keys),
                 "billing_rows_retained_pseudonymously": True,
             },
             created_at=now,
