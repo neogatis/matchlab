@@ -1496,6 +1496,15 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/auth/csrf":
+                csrf = new_csrf_token()
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True},
+                    cookies=[CSRF_COOKIE.header(csrf)],
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/auth/methods":
                 identities = list(
                     db.execute(
