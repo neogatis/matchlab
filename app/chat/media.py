@@ -163,6 +163,17 @@ def validate_uploaded_media(
             storage.delete(object_key)
         finally:
             raise ChatMediaError("chat_media_too_large")
+    expected_size_raw = media.get("size")
+    if expected_size_raw not in (None, ""):
+        try:
+            expected_size = int(expected_size_raw)
+        except (TypeError, ValueError) as exc:
+            raise ChatMediaError("invalid_chat_media_size") from exc
+        if expected_size != int(metadata.content_length):
+            try:
+                storage.delete(object_key)
+            finally:
+                raise ChatMediaError("chat_media_size_mismatch")
     if normalize_mime(metadata.content_type) != mime:
         try:
             storage.delete(object_key)
