@@ -30,7 +30,7 @@ ADAPTIVE_VERSION = "adaptive-v2"
 MIN_ADAPTIVE_ANSWERS = 5
 MAX_ADAPTIVE_ANSWERS = 20
 BASE_PREFETCH_SIZE = 4
-ADAPTIVE_QUEUE_SIZE = 1
+ADAPTIVE_QUEUE_SIZE = 2
 AI_CANDIDATE_AXES = 5
 
 SCALE_OPTIONS = [
@@ -701,7 +701,7 @@ def _openai_next_question(
                 "Content-Type": "application/json",
             },
             json=body,
-            timeout=20,
+            timeout=8,
         )
         response.raise_for_status()
         payload = response.json()
@@ -721,17 +721,24 @@ def _openai_next_question(
     return {"axis_key": axis_key, "text": text_value}, model
 
 
-def _drop_unanswered_generated(db: Session, *, user_id: int) -> None:
-    answered_ids = select(
-        AdaptiveQuestionnaireAnswer.adaptive_question_id
-    ).where(AdaptiveQuestionnaireAnswer.user_id == user_id)
-    db.execute(
-        delete(AdaptiveQuestionnaireQuestion).where(
-            AdaptiveQuestionnaireQuestion.user_id == user_id,
-            AdaptiveQuestionnaireQuestion.id.not_in(answered_ids),
+def _drop_unanswered_generated(
+    db: Session,
+    *,
+    user_id: int,
+    keep: int = 1,
+) -> None:
+    pending = _unanswered_generated(db, user_id)
+    keep_ids = {row.id for row in pending[:max(0, keep)]}
+    if len(pending) <= len(keep_ids):
+        return
+    stale_ids = [row.id for row in pending if row.id not in keep_ids]
+    if stale_ids:
+        db.execute(
+            delete(AdaptiveQuestionnaireQuestion).where(
+                AdaptiveQuestionnaireQuestion.id.in_(stale_ids)
+            )
         )
-    )
-    db.flush()
+        db.flush()
 
 
 def _fallback_bank_text(
@@ -758,23 +765,20 @@ def _fallback_bank_text(
     return _bank_text(axis, user_id=user_id, position=position)
 
 
-def _ensure_queue(
+def _generate_one(
     db: Session,
     *,
     user_id: int,
     snapshot: dict[str, dict[str, Any]],
-) -> None:
-    unanswered = _unanswered_generated(db, user_id)
-    if unanswered:
-        return
-
+    use_openai: bool,
+) -> AdaptiveQuestionnaireQuestion | None:
     answered = _adaptive_answered_count(db, user_id)
     if _should_finish(snapshot, answered):
-        return
+        return None
 
     remaining = MAX_ADAPTIVE_ANSWERS - _adaptive_generated_count(db, user_id)
     if remaining <= 0:
-        return
+        return None
 
     axes = _priority_axes(
         snapshot,
@@ -788,12 +792,16 @@ def _ensure_queue(
         db,
         user_id=user_id,
     )
-    generated, model = _openai_next_question(
-        axes,
-        snapshot,
-        recent_answers=recent_answers,
-        already_asked=already_asked,
-    )
+
+    generated = None
+    model = None
+    if use_openai:
+        generated, model = _openai_next_question(
+            axes,
+            snapshot,
+            recent_answers=recent_answers,
+            already_asked=already_asked,
+        )
 
     axis = axes[0]
     text_value: str | None = None
@@ -812,26 +820,49 @@ def _ensure_queue(
             position=position,
         )
 
-    db.add(
-        AdaptiveQuestionnaireQuestion(
-            user_id=user_id,
-            axis_key=axis.key,
-            category_key=axis.category_key,
-            prompt_text=text_value,
-            source=source,
-            model=model if source == "OPENAI" else None,
-            position=position,
-            generator_metadata={
-                "adaptive_version": ADAPTIVE_VERSION,
-                "confidence_before": snapshot[axis.key]["confidence"],
-                "score_before": snapshot[axis.key]["score"],
-                "candidate_axes": [item.key for item in axes],
-                "recent_answer_count": len(recent_answers),
-                "generated_one_at_a_time": True,
-            },
-        )
+    row = AdaptiveQuestionnaireQuestion(
+        user_id=user_id,
+        axis_key=axis.key,
+        category_key=axis.category_key,
+        prompt_text=text_value,
+        source=source,
+        model=model if source == "OPENAI" else None,
+        position=position,
+        generator_metadata={
+            "adaptive_version": ADAPTIVE_VERSION,
+            "confidence_before": snapshot[axis.key]["confidence"],
+            "score_before": snapshot[axis.key]["score"],
+            "candidate_axes": [item.key for item in axes],
+            "recent_answer_count": len(recent_answers),
+            "prefetched": bool(use_openai),
+        },
     )
+    db.add(row)
     db.flush()
+    return row
+
+
+def _ensure_queue(
+    db: Session,
+    *,
+    user_id: int,
+    snapshot: dict[str, dict[str, Any]],
+    target_size: int = 1,
+    use_openai: bool = False,
+) -> None:
+    target = max(1, min(int(target_size), ADAPTIVE_QUEUE_SIZE))
+    pending = _unanswered_generated(db, user_id)
+    while len(pending) < target:
+        created = _generate_one(
+            db,
+            user_id=user_id,
+            snapshot=snapshot,
+            use_openai=use_openai,
+        )
+        if created is None:
+            break
+        pending = _unanswered_generated(db, user_id)
+
 
 def _mark_complete(db: Session, user_id: int) -> None:
     profile = db.get(Profile, user_id)
@@ -938,6 +969,8 @@ def state(
             db,
             user_id=user_id,
             snapshot=snapshot,
+            target_size=1,
+            use_openai=False,
         )
 
     pending = _unanswered_generated(db, user_id)
@@ -973,6 +1006,38 @@ def state(
             for item in pending[1:ADAPTIVE_QUEUE_SIZE]
         ],
     }
+
+
+def prefetch(
+    db: Session,
+    *,
+    user_id: int,
+) -> dict[str, Any]:
+    profile = db.execute(
+        select(Profile)
+        .where(Profile.user_id == user_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if profile is None:
+        raise AdaptiveQuestionnaireError("Profile not found")
+
+    legacy = _legacy_answers_by_qid(db, user_id)
+    if _base_answered(legacy) < len(BASE_ORDER):
+        return state(db, user_id=user_id, generate_queue=False)
+
+    snapshot = trait_snapshot(db, user_id=user_id)
+    answered = _adaptive_answered_count(db, user_id)
+    if _should_finish(snapshot, answered):
+        return state(db, user_id=user_id, generate_queue=False)
+
+    _ensure_queue(
+        db,
+        user_id=user_id,
+        snapshot=snapshot,
+        target_size=ADAPTIVE_QUEUE_SIZE,
+        use_openai=True,
+    )
+    return state(db, user_id=user_id, generate_queue=False)
 
 
 def answer(
@@ -1045,9 +1110,9 @@ def answer(
         metadata={"questionnaire_version": ADAPTIVE_VERSION},
     )
 
-    # Any unanswered adaptive questions were generated from an older snapshot.
-    # Drop them so the next question is chosen from the freshly recalculated profile.
-    _drop_unanswered_generated(db, user_id=user_id)
+    # Keep at most one already-prefetched question so answering never waits on AI.
+    # Any extra stale questions are discarded and a fresh future question is prefetched separately.
+    _drop_unanswered_generated(db, user_id=user_id, keep=1)
 
     return state(
         db,
