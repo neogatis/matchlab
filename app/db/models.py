@@ -406,6 +406,61 @@ class PhotoUploadTicket(Base):
     )
 
 
+class ChatMediaUploadTicket(Base):
+    __tablename__ = "chat_media_upload_tickets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(120), nullable=False, server_default="")
+    expected_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PREPARED")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PREPARED','CONSUMED','CANCELLED','EXPIRED')",
+            name="ck_chat_media_upload_tickets_status",
+        ),
+        CheckConstraint(
+            "kind IN ('image','video','voice')",
+            name="ck_chat_media_upload_tickets_kind",
+        ),
+        CheckConstraint(
+            "expected_size > 0",
+            name="ck_chat_media_upload_tickets_positive_size",
+        ),
+        Index(
+            "ix_chat_media_upload_tickets_status_expires",
+            "status",
+            "expires_at",
+        ),
+        Index(
+            "ix_chat_media_upload_tickets_user_conversation_status",
+            "user_id",
+            "conversation_id",
+            "status",
+        ),
+    )
+
+
 class Photo(Base):
     __tablename__ = "photos"
 
