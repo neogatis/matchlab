@@ -172,15 +172,15 @@ class MatchingEngineTests(unittest.TestCase):
             self.assertGreaterEqual(result["final_mutual_fit_score"],0)
             self.assertLessEqual(result["final_mutual_fit_score"],100)
 
-    def test_unverified_contact_is_not_matchable(self):
+    def test_unverified_email_does_not_block_matching(self):
         with Session(self.engine) as db:
             a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
             b=self.add_user(db,email="b@example.com",gender="F",seek_gender="M")
             db.get(User,a).email_verified_at=None
+            db.get(User,b).email_verified_at=None
             db.commit()
-            result=matching.evaluate_pair(db,a,b)
-            self.assertFalse(result["eligible"])
-            self.assertEqual(result["reason"],"source_contact_unverified")
+            result=matching.evaluate_pair(db,a,b,now=self.now)
+            self.assertTrue(result["eligible"],result)
 
     def test_configured_gender_ignore_overrides_legacy_seek_gender_filter(self):
         with Session(self.engine) as db:
