@@ -93,6 +93,7 @@ from app.chat.service import (
     ChatUnavailable,
     MessageValidationError,
     NotConversationParticipant,
+    expire_chat_media_uploads,
     get_message_media,
     get_or_create_conversation,
     list_conversations,
@@ -162,6 +163,7 @@ from app.profile.service import (
 from app.questionnaire.adaptive import (
     AdaptiveQuestionnaireError,
     answer as adaptive_questionnaire_answer,
+    prefetch as adaptive_questionnaire_prefetch,
     state as adaptive_questionnaire_state,
 )
 from app.questionnaire.service import (
@@ -328,7 +330,7 @@ def phone_auth_configured() -> bool:
 
 def _ensure_launch_markets(db) -> None:
     markets = (
-        ("KZ-ALA", "ALA", "Алматы", 43.238949, 76.889709, True),
+        ("KZ-ALA", "ALA", "Алматы", 43.238949, 76.889709, False),
         ("KZ-AST", "AST", "Астана", 51.169392, 71.449074, False),
         ("KZ-SHY", "SHY", "Шымкент", 42.3417, 69.5901, False),
         ("KZ-KAR", "KAR", "Караганда", 49.8064, 73.0855, False),
@@ -805,6 +807,10 @@ def run_maintenance_once() -> dict[str, Any]:
     with runtime().db() as db:
         result["privacy_deletions"] = process_due_deletions(db, limit=100)
         result["retention"] = process_retention_cleanup(db)
+        result["chat_media_expired"] = expire_chat_media_uploads(
+            db,
+            limit=100,
+        )
         if photo_storage_configured():
             result["photo_deletions"] = process_deletion_outbox(
                 db,
@@ -870,7 +876,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/36"
+    server_version = "MatchLab/37"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -1054,7 +1060,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 36,
+                        "phase": 37,
                         "adaptive_questionnaire": True,
                         "openai_adaptive_configured": bool(
                             os.environ.get("OPENAI_API_KEY", "").strip()
@@ -1967,6 +1973,16 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         user_id=principal.user_id,
                         question_token=token,
                         value=value,
+                    ),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/questionnaire/adaptive/prefetch":
+                self._send_json(
+                    HTTPStatus.OK,
+                    adaptive_questionnaire_prefetch(
+                        db,
+                        user_id=principal.user_id,
                     ),
                 )
                 return
