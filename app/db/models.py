@@ -425,6 +425,7 @@ class Photo(Base):
 
     __table_args__ = (
         Index("ix_photos_user_status", "user_id", "moderation_status"),
+        Index("ix_photos_user_purpose_status", "user_id", "purpose", "moderation_status"),
         Index("uq_photos_one_main_per_user", "user_id", unique=True, postgresql_where=text("is_main")),
         CheckConstraint("moderation_status IN ('PENDING','APPROVED','REJECTED')", name="ck_photos_moderation_status"),
         CheckConstraint("purpose IN ('PROFILE','IDENTITY')", name="ck_photos_purpose"),
