@@ -56,6 +56,7 @@ RETENTION_POLICY = {
     "sent_auth_outbox_days": 30,
     "completed_data_request_log_days": 180,
     "photo_deletion_log_days": 30,
+    "chat_media_ticket_days": 30,
     "product_analytics_days": 365,
     "security_audit_days": 365,
     "moderation_audit_days": 365,
@@ -662,6 +663,14 @@ def process_retention_cleanup(
             PhotoObjectDeletion.deleted_at.is_not(None),
             PhotoObjectDeletion.deleted_at
             < now - timedelta(days=RETENTION_POLICY["photo_deletion_log_days"]),
+        ),
+    )
+    run(
+        "chat_media_tickets",
+        delete(ChatMediaUploadTicket).where(
+            ChatMediaUploadTicket.status.in_(("CONSUMED", "CANCELLED", "EXPIRED")),
+            ChatMediaUploadTicket.created_at
+            < now - timedelta(days=RETENTION_POLICY["chat_media_ticket_days"]),
         ),
     )
     run(
