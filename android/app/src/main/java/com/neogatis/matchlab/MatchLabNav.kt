@@ -67,9 +67,7 @@ object MatchLabNav {
             nav.addView(button)
         }
 
-        item("⌂\nГлавная", "home", HomeActivity::class.java)
-        item("♡\nСовпадения", "matches", MatchesActivity::class.java)
-        item("◌\nЧаты", "chats", ChatsActivity::class.java)
+        item("⌂\nГлавная", "home", MainActivity::class.java)
         item("♙\nПрофиль", "profile", OnboardingActivity::class.java)
 
         container.addView(nav)
