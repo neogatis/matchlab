@@ -93,10 +93,13 @@ from app.chat.service import (
     ChatUnavailable,
     MessageValidationError,
     NotConversationParticipant,
+    get_message_media,
     get_or_create_conversation,
     list_conversations,
     list_messages,
     mark_read,
+    message_payload,
+    prepare_media_upload,
     send_message,
 )
 from app.interests.service import (
@@ -867,7 +870,7 @@ def start_maintenance_thread() -> threading.Thread:
 
 
 class MatchLabHandler(BaseHTTPRequestHandler):
-    server_version = "MatchLab/35"
+    server_version = "MatchLab/36"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep stdlib request logs concise; sensitive body/header data is never logged.
@@ -911,6 +914,15 @@ class MatchLabHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(raw)
+
+    def _send_redirect(self, location: str, *, cache_seconds: int = 120) -> None:
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", f"private, max-age={int(cache_seconds)}")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.end_headers()
 
     def _send_file(
         self,
@@ -1042,7 +1054,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "matchlab",
                         "runtime": "postgres-http",
-                        "phase": 35,
+                        "phase": 36,
                         "adaptive_questionnaire": True,
                         "openai_adaptive_configured": bool(
                             os.environ.get("OPENAI_API_KEY", "").strip()
@@ -2534,6 +2546,42 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if method == "POST" and path == f"{API_PREFIX}/chat/media/prepare":
+                body = self._body()
+                prepared = prepare_media_upload(
+                    db,
+                    conversation_id=int(body.get("conversation_id", 0)),
+                    user_id=principal.user_id,
+                    mime=str(body.get("mime", "")),
+                    kind=str(body.get("kind", "")),
+                    size=int(body.get("size", 0)),
+                    name=str(body.get("name", "")),
+                    storage=photo_storage(),
+                )
+                self._send_json(HTTPStatus.CREATED, prepared)
+                return
+
+            media_prefix = f"{API_PREFIX}/chat/media/"
+            if (
+                method == "GET"
+                and path.startswith(media_prefix)
+                and path != f"{API_PREFIX}/chat/media/prepare"
+            ):
+                raw_message_id = path[len(media_prefix):]
+                if not raw_message_id.isdigit():
+                    raise ApiError(HTTPStatus.NOT_FOUND, "chat_media_not_found")
+                media = get_message_media(
+                    db,
+                    message_id=int(raw_message_id),
+                    user_id=principal.user_id,
+                )
+                signed_url = photo_storage().presign_download(
+                    str(media["object_key"]),
+                    expires_seconds=300,
+                )
+                self._send_redirect(signed_url, cache_seconds=120)
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/chat/messages":
                 query = parse_qs(urlparse(self.path).query)
                 try:
@@ -2559,24 +2607,23 @@ class MatchLabHandler(BaseHTTPRequestHandler):
 
             if method == "POST" and path == f"{API_PREFIX}/chat/messages":
                 body = self._body()
+                media = body.get("media") if isinstance(body.get("media"), dict) else None
                 message = send_message(
                     db,
                     conversation_id=int(body.get("conversation_id", 0)),
                     sender_id=principal.user_id,
                     body=str(body.get("body", "")),
                     client_message_id=body.get("client_message_id"),
+                    media=media,
+                    storage=photo_storage() if media is not None else None,
                 )
                 self._send_json(
                     HTTPStatus.CREATED,
                     {
-                        "message": {
-                            "id": message.id,
-                            "sender_id": message.sender,
-                            "body": message.body,
-                            "created_at": message.created_at,
-                            "read_at": message.read_at,
-                            "is_mine": True,
-                        }
+                        "message": message_payload(
+                            message,
+                            user_id=principal.user_id,
+                        )
                     },
                 )
                 return
