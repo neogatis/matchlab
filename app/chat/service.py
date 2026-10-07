@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select, update
@@ -18,10 +18,12 @@ from app.chat.media import (
 from app.analytics.events import EVENT_CHAT_STARTED, track_once
 from app.db.models import (
     Block,
+    ChatMediaUploadTicket,
     Conversation,
     Match,
     Message,
     Notification,
+    PhotoObjectDeletion,
     ProductEvent,
     Profile,
     User,
@@ -50,6 +52,46 @@ class MessageValidationError(ChatError):
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+CHAT_MEDIA_UPLOAD_TTL_MINUTES = 15
+
+
+def _queue_object_deletion(db: Session, object_key: str) -> None:
+    key = str(object_key or "").strip()
+    if not key:
+        return
+    existing = db.execute(
+        select(PhotoObjectDeletion).where(PhotoObjectDeletion.object_key == key)
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(PhotoObjectDeletion(object_key=key, status="PENDING"))
+
+
+def expire_chat_media_uploads(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 100,
+) -> dict[str, int]:
+    now = now or utcnow()
+    rows = list(
+        db.execute(
+            select(ChatMediaUploadTicket)
+            .where(
+                ChatMediaUploadTicket.status == "PREPARED",
+                ChatMediaUploadTicket.expires_at <= now,
+            )
+            .order_by(ChatMediaUploadTicket.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ).scalars()
+    )
+    for row in rows:
+        row.status = "EXPIRED"
+        _queue_object_deletion(db, row.object_key)
+    db.flush()
+    return {"processed": len(rows), "expired": len(rows)}
 
 
 def _match_for_user(db: Session, match_id: int, user_id: int) -> Match:
@@ -176,16 +218,44 @@ def send_message(
     else:
         if storage is None:
             raise MessageValidationError("chat_media_storage_unavailable")
+        object_key = str(media.get("object_key", "") if isinstance(media, dict) else "").strip()
+        ticket = db.execute(
+            select(ChatMediaUploadTicket).where(
+                ChatMediaUploadTicket.object_key == object_key,
+                ChatMediaUploadTicket.user_id == sender_id,
+                ChatMediaUploadTicket.conversation_id == conversation.id,
+            )
+        ).scalar_one_or_none()
+        if ticket is None or ticket.status != "PREPARED":
+            raise MessageValidationError("chat_media_upload_not_prepared")
+        if ticket.expires_at <= now:
+            ticket.status = "EXPIRED"
+            _queue_object_deletion(db, ticket.object_key)
+            db.flush()
+            raise MessageValidationError("chat_media_upload_expired")
+        authoritative_media = {
+            "object_key": ticket.object_key,
+            "kind": ticket.kind,
+            "mime": ticket.mime,
+            "name": ticket.original_name,
+            "size": ticket.expected_size,
+            "duration_seconds": media.get("duration_seconds") if isinstance(media, dict) else None,
+        }
         try:
             normalized_media = validate_uploaded_media(
                 storage=storage,
                 user_id=sender_id,
                 conversation_id=conversation.id,
-                media=media,
+                media=authoritative_media,
             )
             stored_body = encode_media_body(normalized_media, body)
             message_kind = str(normalized_media.get("kind") or "media")
+            ticket.status = "CONSUMED"
+            ticket.consumed_at = now
         except ChatMediaError as exc:
+            ticket.status = "CANCELLED"
+            _queue_object_deletion(db, ticket.object_key)
+            db.flush()
             raise MessageValidationError(str(exc)) from exc
 
     message = Message(
@@ -316,7 +386,7 @@ def prepare_media_upload(
     if recipient is None or recipient.status != "ACTIVE":
         raise ChatUnavailable("recipient_inactive")
     try:
-        return prepare_object_upload(
+        prepared = prepare_object_upload(
             storage=storage,
             user_id=user_id,
             conversation_id=conversation.id,
@@ -325,6 +395,23 @@ def prepare_media_upload(
             size=size,
             name=name,
         )
+        now = utcnow()
+        ticket = ChatMediaUploadTicket(
+            user_id=user_id,
+            conversation_id=conversation.id,
+            object_key=prepared["object_key"],
+            mime=prepared["mime"],
+            kind=prepared["kind"],
+            original_name=prepared["name"],
+            expected_size=int(size),
+            status="PREPARED",
+            expires_at=now + timedelta(minutes=CHAT_MEDIA_UPLOAD_TTL_MINUTES),
+            created_at=now,
+        )
+        db.add(ticket)
+        db.flush()
+        prepared["expires_at"] = ticket.expires_at
+        return prepared
     except ChatMediaError as exc:
         raise MessageValidationError(str(exc)) from exc
 
