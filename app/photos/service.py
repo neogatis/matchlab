@@ -22,9 +22,11 @@ from app.db.models import (
 from .storage import InvalidImageObject, ObjectMetadata, S3PhotoStorage
 
 
-MIN_PHOTOS = 2
+MIN_PHOTOS = 1
 RECOMMENDED_PHOTOS = (3, 5)
 MAX_PHOTOS = 5
+PHOTO_PURPOSE_PROFILE = "PROFILE"
+PHOTO_PURPOSE_IDENTITY = "IDENTITY"
 MAX_FILE_BYTES = 12 * 1024 * 1024
 UPLOAD_TTL = timedelta(minutes=10)
 
@@ -74,20 +76,36 @@ def _parse_ticket(token: str) -> tuple[int, str]:
     return ticket_id, secret
 
 
-def _photo_count(db: Session, user_id: int) -> int:
+def _photo_count(
+    db: Session,
+    user_id: int,
+    *,
+    purpose: str = PHOTO_PURPOSE_PROFILE,
+) -> int:
     return int(
-        db.scalar(select(func.count()).select_from(Photo).where(Photo.user_id == user_id))
+        db.scalar(
+            select(func.count())
+            .select_from(Photo)
+            .where(Photo.user_id == user_id, Photo.purpose == purpose)
+        )
         or 0
     )
 
 
-def _active_ticket_count(db: Session, user_id: int, now: datetime) -> int:
+def _active_ticket_count(
+    db: Session,
+    user_id: int,
+    now: datetime,
+    *,
+    purpose: str = PHOTO_PURPOSE_PROFILE,
+) -> int:
     return int(
         db.scalar(
             select(func.count())
             .select_from(PhotoUploadTicket)
             .where(
                 PhotoUploadTicket.user_id == user_id,
+                PhotoUploadTicket.purpose == purpose,
                 PhotoUploadTicket.status == "PREPARED",
                 PhotoUploadTicket.expires_at > now,
             )
@@ -103,8 +121,12 @@ def prepare_upload(
     mime: str,
     storage: S3PhotoStorage,
     now: datetime | None = None,
+    purpose: str = PHOTO_PURPOSE_PROFILE,
 ) -> dict[str, Any]:
     now = now or utcnow()
+    purpose = (purpose or PHOTO_PURPOSE_PROFILE).upper().strip()
+    if purpose not in {PHOTO_PURPOSE_PROFILE, PHOTO_PURPOSE_IDENTITY}:
+        raise PhotoError("Unsupported photo purpose")
     profile = db.get(Profile, user_id)
     if profile is None:
         raise PhotoError("Profile not found")
@@ -114,15 +136,33 @@ def prepare_upload(
     if extension is None:
         raise PhotoError("Unsupported image type")
 
-    if _photo_count(db, user_id) + _active_ticket_count(db, user_id, now) >= MAX_PHOTOS:
-        raise PhotoLimitReached(f"Maximum {MAX_PHOTOS} photos")
+    if purpose == PHOTO_PURPOSE_PROFILE:
+        if (
+            _photo_count(db, user_id, purpose=PHOTO_PURPOSE_PROFILE)
+            + _active_ticket_count(
+                db, user_id, now, purpose=PHOTO_PURPOSE_PROFILE
+            )
+            >= MAX_PHOTOS
+        ):
+            raise PhotoLimitReached(f"Maximum {MAX_PHOTOS} photos")
+    else:
+        if profile.identity_verification_status == "VERIFIED":
+            raise PhotoError("Identity is already verified")
+        if profile.identity_verification_status == "PENDING":
+            raise PhotoError("Identity verification is already pending")
+        if _active_ticket_count(
+            db, user_id, now, purpose=PHOTO_PURPOSE_IDENTITY
+        ) >= 1:
+            raise PhotoError("Identity verification upload is already prepared")
 
     secret = secrets.token_urlsafe(32)
-    object_key = f"users/{user_id}/{uuid.uuid4().hex}{extension}"
+    folder = "identity" if purpose == PHOTO_PURPOSE_IDENTITY else "profile"
+    object_key = f"users/{user_id}/{folder}/{uuid.uuid4().hex}{extension}"
     ticket = PhotoUploadTicket(
         user_id=user_id,
         object_key=object_key,
         mime=mime,
+        purpose=purpose,
         secret_hash=_sha256(secret),
         status="PREPARED",
         expires_at=now + UPLOAD_TTL,
@@ -143,6 +183,7 @@ def prepare_upload(
         "expires_at": ticket.expires_at,
         "max_bytes": MAX_FILE_BYTES,
         "allowed_mime": sorted(ALLOWED_MIME),
+        "purpose": purpose,
     }
 
 
@@ -179,16 +220,27 @@ def finalize_upload(
     ticket_token: str,
     storage: S3PhotoStorage,
     now: datetime | None = None,
+    expected_purpose: str = PHOTO_PURPOSE_PROFILE,
 ) -> Photo:
     now = now or utcnow()
+    expected_purpose = (expected_purpose or PHOTO_PURPOSE_PROFILE).upper().strip()
     ticket = _load_ticket_for_update(
         db,
         user_id=user_id,
         ticket_token=ticket_token,
         now=now,
     )
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise PhotoError("Profile not found")
 
-    if _photo_count(db, user_id) >= MAX_PHOTOS:
+    if ticket.purpose != expected_purpose:
+        raise UploadTicketError("Upload ticket purpose mismatch")
+
+    if (
+        ticket.purpose == PHOTO_PURPOSE_PROFILE
+        and _photo_count(db, user_id, purpose=PHOTO_PURPOSE_PROFILE) >= MAX_PHOTOS
+    ):
         ticket.status = "CANCELLED"
         db.flush()
         raise PhotoLimitReached(f"Maximum {MAX_PHOTOS} photos")
@@ -232,12 +284,25 @@ def finalize_upload(
     except Exception as exc:
         raise UploadTicketError("Uploaded image could not be sanitized") from exc
 
-    max_order = db.scalar(
-        select(func.max(Photo.sort_order)).where(Photo.user_id == user_id)
-    )
-    any_main = db.execute(
-        select(Photo.id).where(Photo.user_id == user_id, Photo.is_main.is_(True))
-    ).first() is not None
+    if ticket.purpose == PHOTO_PURPOSE_PROFILE:
+        max_order = db.scalar(
+            select(func.max(Photo.sort_order)).where(
+                Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
+            )
+        )
+        any_main = db.execute(
+            select(Photo.id).where(
+                Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
+                Photo.is_main.is_(True),
+            )
+        ).first() is not None
+        sort_order = int(max_order if max_order is not None else -1) + 1
+        is_main = not any_main
+    else:
+        sort_order = 0
+        is_main = False
 
     photo = Photo(
         user_id=user_id,
@@ -245,8 +310,9 @@ def finalize_upload(
         mime=ticket.mime,
         byte_size=metadata.content_length,
         object_etag=metadata.etag,
-        is_main=not any_main,
-        sort_order=int(max_order if max_order is not None else -1) + 1,
+        purpose=ticket.purpose,
+        is_main=is_main,
+        sort_order=sort_order,
         moderation_status="PENDING",
         created_at=now,
     )
@@ -254,12 +320,17 @@ def finalize_upload(
     ticket.status = "CONSUMED"
     ticket.consumed_at = now
     db.flush()
-    recompute_photo_completion(db, user_id=user_id)
+    if ticket.purpose == PHOTO_PURPOSE_PROFILE:
+        recompute_photo_completion(db, user_id=user_id)
+    else:
+        profile.identity_verification_status = "PENDING"
+        profile.identity_verified_at = None
+        db.flush()
     track_event(
         db,
         event_type=EVENT_PHOTO_UPLOADED,
         user_id=user_id,
-        metadata={"photo_id": photo.id},
+        metadata={"photo_id": photo.id, "purpose": ticket.purpose},
         now=now,
     )
     return photo
@@ -269,7 +340,10 @@ def list_owner_photos(db: Session, *, user_id: int) -> list[Photo]:
     return list(
         db.execute(
             select(Photo)
-            .where(Photo.user_id == user_id)
+            .where(
+                Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
+            )
             .order_by(Photo.sort_order, Photo.id)
         ).scalars()
     )
@@ -281,6 +355,7 @@ def visible_photos(db: Session, *, user_id: int) -> list[Photo]:
             select(Photo)
             .where(
                 Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
                 Photo.moderation_status == "APPROVED",
                 Photo.storage_key.is_not(None),
             )
@@ -320,13 +395,22 @@ def visible_photo_payloads(
 
 def set_main_photo(db: Session, *, user_id: int, photo_id: int) -> Photo:
     target = db.get(Photo, photo_id)
-    if target is None or target.user_id != user_id:
+    if (
+        target is None
+        or target.user_id != user_id
+        or target.purpose != PHOTO_PURPOSE_PROFILE
+    ):
         raise PhotoNotFound("Photo not found")
     if target.moderation_status == "REJECTED":
         raise PhotoError("Rejected photo cannot be main")
 
     photos = list(
-        db.execute(select(Photo).where(Photo.user_id == user_id)).scalars()
+        db.execute(
+            select(Photo).where(
+                Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
+            )
+        ).scalars()
     )
     for photo in photos:
         photo.is_main = False
@@ -358,6 +442,7 @@ def _ensure_approved_main(db: Session, user_id: int) -> None:
             select(Photo)
             .where(
                 Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
                 Photo.moderation_status == "APPROVED",
             )
             .order_by(Photo.is_main.desc(), Photo.sort_order, Photo.id)
@@ -370,7 +455,12 @@ def _ensure_approved_main(db: Session, user_id: int) -> None:
         return
 
     all_photos = list(
-        db.execute(select(Photo).where(Photo.user_id == user_id)).scalars()
+        db.execute(
+            select(Photo).where(
+                Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
+            )
+        ).scalars()
     )
     for photo in all_photos:
         photo.is_main = False
@@ -391,6 +481,7 @@ def recompute_photo_completion(db: Session, *, user_id: int) -> bool:
             .select_from(Photo)
             .where(
                 Photo.user_id == user_id,
+                Photo.purpose == PHOTO_PURPOSE_PROFILE,
                 Photo.moderation_status == "APPROVED",
             )
         )
@@ -399,6 +490,7 @@ def recompute_photo_completion(db: Session, *, user_id: int) -> bool:
     approved_main = db.execute(
         select(Photo.id).where(
             Photo.user_id == user_id,
+            Photo.purpose == PHOTO_PURPOSE_PROFILE,
             Photo.moderation_status == "APPROVED",
             Photo.is_main.is_(True),
         )
@@ -439,24 +531,91 @@ def moderate_photo(
     db.add(
         ModerationAction(
             actor=actor.strip(),
-            target_type="photo",
+            target_type=(
+                "identity_verification"
+                if photo.purpose == PHOTO_PURPOSE_IDENTITY
+                else "photo"
+            ),
             target_id=str(photo.id),
-            action=f"PHOTO_{status}",
+            action=(
+                f"IDENTITY_{status}"
+                if photo.purpose == PHOTO_PURPOSE_IDENTITY
+                else f"PHOTO_{status}"
+            ),
             metadata_json={"reason": photo.moderation_reason or ""},
             created_at=now,
         )
     )
     db.flush()
-    recompute_photo_completion(db, user_id=photo.user_id)
-    if status == "APPROVED":
-        track_event(
-            db,
-            event_type=EVENT_PHOTO_APPROVED,
-            user_id=photo.user_id,
-            metadata={"photo_id": photo.id},
-            now=now,
+    if photo.purpose == PHOTO_PURPOSE_IDENTITY:
+        profile = db.get(Profile, photo.user_id)
+        if profile is None:
+            raise PhotoError("Profile not found")
+        profile.identity_verification_status = (
+            "VERIFIED" if status == "APPROVED" else "REJECTED"
         )
+        profile.identity_verified_at = now if status == "APPROVED" else None
+
+        # Verification selfies are private review artifacts, not profile media.
+        # After a moderation decision, remove the object asynchronously while
+        # keeping the verification result and moderation reason.
+        if photo.storage_key:
+            existing = db.execute(
+                select(PhotoObjectDeletion).where(
+                    PhotoObjectDeletion.object_key == photo.storage_key
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                db.add(
+                    PhotoObjectDeletion(
+                        object_key=photo.storage_key,
+                        status="PENDING",
+                    )
+                )
+            photo.storage_key = None
+        db.flush()
+    else:
+        recompute_photo_completion(db, user_id=photo.user_id)
+        if status == "APPROVED":
+            track_event(
+                db,
+                event_type=EVENT_PHOTO_APPROVED,
+                user_id=photo.user_id,
+                metadata={"photo_id": photo.id},
+                now=now,
+            )
     return photo
+
+
+def identity_verification_status(
+    db: Session,
+    *,
+    user_id: int,
+) -> dict[str, Any]:
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise PhotoError("Profile not found")
+    latest = db.execute(
+        select(Photo)
+        .where(
+            Photo.user_id == user_id,
+            Photo.purpose == PHOTO_PURPOSE_IDENTITY,
+        )
+        .order_by(Photo.created_at.desc(), Photo.id.desc())
+    ).scalars().first()
+    return {
+        "status": profile.identity_verification_status,
+        "verified": profile.identity_verification_status == "VERIFIED",
+        "verified_at": profile.identity_verified_at,
+        "photo_id": latest.id if latest else None,
+        "moderation_reason": latest.moderation_reason if latest else None,
+        "submitted_at": latest.created_at if latest else None,
+        "instructions": (
+            "Сделайте свежее селфи без фильтров: лицо полностью видно, "
+            "хорошее освещение, без очков и маски. Селфи не показывается "
+            "другим пользователям и используется только для проверки."
+        ),
+    }
 
 
 def delete_photo(db: Session, *, user_id: int, photo_id: int) -> None:

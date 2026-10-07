@@ -76,11 +76,14 @@ from app.photos.service import (
     UploadTicketError,
     delete_photo,
     finalize_upload,
+    identity_verification_status,
     process_deletion_outbox,
     list_owner_photos,
     moderate_photo,
     photo_progress,
     prepare_upload,
+    PHOTO_PURPOSE_IDENTITY,
+    PHOTO_PURPOSE_PROFILE,
     reorder_photos,
     set_main_photo,
 )
@@ -753,6 +756,7 @@ def _candidate_profile_payload(
         "alcohol": profile.alcohol,
         "lifestyle": profile.lifestyle,
         "religion": profile.religion,
+        "identity_verified": profile.identity_verification_status == "VERIFIED",
         "photos": photos,
     }
     if scoring:
@@ -1731,6 +1735,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                             "nationality": profile.nationality,
                             "children_status": profile.children_status,
                             "children_plans": profile.children_plans,
+                            "identity_verification_status": profile.identity_verification_status,
+                            "identity_verified_at": profile.identity_verified_at,
                         },
                         "completion": profile_completion_state(profile),
                         "verification": _verification_payload(
@@ -1814,6 +1820,8 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "bio": profile.bio,
                         "religion": profile.religion,
                         "nationality": profile.nationality,
+                        "identity_verification_status": profile.identity_verification_status,
+                        "identity_verified_at": profile.identity_verified_at,
                     }
                     response["waitlist"] = waitlist_status(
                         db,
@@ -2030,6 +2038,52 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, result)
                 return
 
+            if method == "GET" and path == f"{API_PREFIX}/identity/verification":
+                self._send_json(
+                    HTTPStatus.OK,
+                    identity_verification_status(
+                        db,
+                        user_id=principal.user_id,
+                    ),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/identity/verification/prepare":
+                body = self._body()
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    prepare_upload(
+                        db,
+                        user_id=principal.user_id,
+                        mime=str(body.get("mime", "")),
+                        storage=photo_storage(),
+                        purpose=PHOTO_PURPOSE_IDENTITY,
+                    ),
+                )
+                return
+
+            if method == "POST" and path == f"{API_PREFIX}/identity/verification/finalize":
+                body = self._body()
+                photo = finalize_upload(
+                    db,
+                    user_id=principal.user_id,
+                    ticket_token=str(body.get("ticket", "")),
+                    storage=photo_storage(),
+                    expected_purpose=PHOTO_PURPOSE_IDENTITY,
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "id": photo.id,
+                        "moderation_status": photo.moderation_status,
+                        "verification": identity_verification_status(
+                            db,
+                            user_id=principal.user_id,
+                        ),
+                    },
+                )
+                return
+
             if method == "GET" and path == f"{API_PREFIX}/photos":
                 storage = photo_storage()
                 items = []
@@ -2039,6 +2093,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                             "id": photo.id,
                             "mime": photo.mime,
                             "byte_size": photo.byte_size,
+                            "purpose": photo.purpose,
                             "is_main": photo.is_main,
                             "sort_order": photo.sort_order,
                             "moderation_status": photo.moderation_status,
@@ -2069,6 +2124,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         user_id=principal.user_id,
                         mime=str(body.get("mime", "")),
                         storage=photo_storage(),
+                        purpose=PHOTO_PURPOSE_PROFILE,
                     ),
                 )
                 return
@@ -2080,6 +2136,7 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     user_id=principal.user_id,
                     ticket_token=str(body.get("ticket", "")),
                     storage=photo_storage(),
+                    expected_purpose=PHOTO_PURPOSE_PROFILE,
                 )
                 self._send_json(
                     HTTPStatus.CREATED,
@@ -2148,11 +2205,17 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                                 "user_id": photo.user_id,
                                 "mime": photo.mime,
                                 "byte_size": photo.byte_size,
+                                "purpose": photo.purpose,
                                 "is_main": photo.is_main,
                                 "created_at": photo.created_at,
                                 "url": storage.presign_download(photo.storage_key)
                                 if photo.storage_key
                                 else None,
+                                "profile_photos": (
+                                    _candidate_photo_urls(db, photo.user_id)
+                                    if photo.purpose == PHOTO_PURPOSE_IDENTITY
+                                    else []
+                                ),
                             }
                             for photo in rows
                         ]
@@ -2170,19 +2233,32 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                     actor=f"user:{principal.user_id}",
                     reason=str(body.get("reason", "")),
                 )
-                kind = (
-                    "PHOTO_APPROVED"
-                    if photo.moderation_status == "APPROVED"
-                    else "PHOTO_REJECTED"
-                )
-                notification = Notification(
-                    user_id=photo.user_id,
-                    kind=kind,
-                    text=(
+                if photo.purpose == PHOTO_PURPOSE_IDENTITY:
+                    kind = (
+                        "IDENTITY_VERIFIED"
+                        if photo.moderation_status == "APPROVED"
+                        else "IDENTITY_REJECTED"
+                    )
+                    notification_text = (
+                        "Личность подтверждена."
+                        if kind == "IDENTITY_VERIFIED"
+                        else "Селфи для подтверждения личности отклонено. Можно отправить новое."
+                    )
+                else:
+                    kind = (
+                        "PHOTO_APPROVED"
+                        if photo.moderation_status == "APPROVED"
+                        else "PHOTO_REJECTED"
+                    )
+                    notification_text = (
                         "Фото одобрено."
                         if kind == "PHOTO_APPROVED"
                         else "Фото отклонено. Проверьте статус фото в профиле."
-                    ),
+                    )
+                notification = Notification(
+                    user_id=photo.user_id,
+                    kind=kind,
+                    text=notification_text,
                 )
                 db.add(notification)
                 db.flush()
@@ -2196,6 +2272,12 @@ class MatchLabHandler(BaseHTTPRequestHandler):
                         "id": photo.id,
                         "user_id": photo.user_id,
                         "moderation_status": photo.moderation_status,
+                        "purpose": photo.purpose,
+                        "identity_verification_status": (
+                            db.get(Profile, photo.user_id).identity_verification_status
+                            if photo.purpose == PHOTO_PURPOSE_IDENTITY
+                            else None
+                        ),
                         "notification_id": notification.id,
                     },
                 )

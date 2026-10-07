@@ -209,6 +209,8 @@ class Profile(Base):
     partner_preferences_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     photos_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     profile_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    identity_verification_status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="NOT_STARTED")
+    identity_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -218,6 +220,7 @@ class Profile(Base):
         CheckConstraint("relationship_status IN ('ACTIVE_SEARCH','OPEN_TO_MATCH','PAUSED','IN_RELATIONSHIP','NOT_ACTIVE')", name="ck_profiles_relationship_status"),
         CheckConstraint("eligibility_status IN ('ACTIVE_FOR_MATCHING','NOT_ACTIVE_FOR_MATCHING')", name="ck_profiles_eligibility_status"),
         CheckConstraint("children_status IN ('','NO_CHILDREN','HAS_CHILDREN')", name="ck_profiles_children_status"),
+        CheckConstraint("identity_verification_status IN ('NOT_STARTED','PENDING','VERIFIED','REJECTED')", name="ck_profiles_identity_verification_status"),
         Index("ix_profiles_matchable", "eligibility_status", "relationship_status", "gender", "seek_gender", "market_id"),
     )
 
@@ -389,6 +392,7 @@ class PhotoUploadTicket(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PROFILE")
     secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PREPARED")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -397,6 +401,7 @@ class PhotoUploadTicket(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('PREPARED','CONSUMED','CANCELLED','EXPIRED')", name="ck_photo_upload_tickets_status"),
+        CheckConstraint("purpose IN ('PROFILE','IDENTITY')", name="ck_photo_upload_tickets_purpose"),
         Index("ix_photo_upload_tickets_user_status", "user_id", "status"),
     )
 
@@ -410,6 +415,7 @@ class Photo(Base):
     mime: Mapped[str] = mapped_column(String(100), nullable=False)
     byte_size: Mapped[int | None] = mapped_column(BigInteger)
     object_etag: Mapped[str | None] = mapped_column(String(160))
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, server_default="PROFILE")
     is_main: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     moderation_status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="PENDING")
@@ -419,8 +425,10 @@ class Photo(Base):
 
     __table_args__ = (
         Index("ix_photos_user_status", "user_id", "moderation_status"),
+        Index("ix_photos_user_purpose_status", "user_id", "purpose", "moderation_status"),
         Index("uq_photos_one_main_per_user", "user_id", unique=True, postgresql_where=text("is_main")),
         CheckConstraint("moderation_status IN ('PENDING','APPROVED','REJECTED')", name="ck_photos_moderation_status"),
+        CheckConstraint("purpose IN ('PROFILE','IDENTITY')", name="ck_photos_purpose"),
         CheckConstraint("byte_size IS NULL OR byte_size > 0", name="ck_photos_positive_size"),
         CheckConstraint("sort_order >= 0", name="ck_photos_sort_order_nonnegative"),
     )

@@ -19,6 +19,9 @@ button{font:inherit;border:0;border-radius:10px;padding:10px 14px;cursor:pointer
 .card{background:white;border-radius:16px;padding:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .card img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;background:#eee}
 .meta{font-size:13px;color:#666;margin:10px 0}
+.kind{display:inline-block;margin-top:8px;padding:5px 8px;border-radius:999px;background:#efe8ff;color:#6840b3;font-size:12px;font-weight:700}
+.compare{display:flex;gap:6px;margin-top:9px;overflow:auto}
+.compare img{width:54px!important;height:54px!important;aspect-ratio:auto!important;border-radius:10px!important}
 .actions{display:flex;gap:8px}
 .approve{background:#111;color:white;flex:1}
 .reject{background:#eee;color:#111;flex:1}
@@ -75,17 +78,21 @@ async function loadPending(){
     for(const photo of photos){
       const card=document.createElement("div");
       card.className="card";
+      const isIdentity=photo.purpose==="IDENTITY";
+      const compare=(photo.profile_photos||[]).map(url=>'<img src="'+esc(url)+'" alt="Фото профиля">').join("");
       card.innerHTML=
-        '<img src="'+esc(photo.url)+'" alt="Фото на модерации">'+
+        '<img src="'+esc(photo.url)+'" alt="'+(isIdentity?'Селфи подтверждения':'Фото на модерации')+'">'+
+        '<div class="kind">'+(isIdentity?'Подтверждение личности':'Фото профиля')+'</div>'+
         '<div class="meta">Photo #'+esc(photo.id)+' · User #'+esc(photo.user_id)+
         '<br>'+esc(photo.mime)+' · '+Math.round((photo.byte_size||0)/1024)+' KB</div>'+
+        (isIdentity?'<div class="meta">Сравните селфи с одобренными фото профиля:</div><div class="compare">'+compare+'</div>':'')+
         '<div class="actions">'+
         '<button class="approve">Одобрить</button>'+
         '<button class="reject">Отклонить</button>'+
         '</div>';
       card.querySelector(".approve").onclick=()=>moderate(photo.id,"APPROVED","");
       card.querySelector(".reject").onclick=()=>{
-        const reason=prompt("Причина отклонения:","Не подходит для профиля");
+        const reason=prompt("Причина отклонения:",isIdentity?"Лицо не совпадает с фото профиля":"Не подходит для профиля");
         if(reason!==null) moderate(photo.id,"REJECTED",reason);
       };
       grid.appendChild(card);
