@@ -6,6 +6,15 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.chat.media import (
+    ChatMediaError,
+    decode_media_body,
+    encode_media_body,
+    prepare_object_upload,
+    preview_text,
+    public_media_payload,
+    validate_uploaded_media,
+)
 from app.analytics.events import EVENT_CHAT_STARTED, track_once
 from app.db.models import (
     Block,
@@ -127,10 +136,11 @@ def send_message(
     sender_id: int,
     body: str,
     client_message_id: str | None = None,
+    media: dict[str, Any] | None = None,
+    storage: Any | None = None,
     now: datetime | None = None,
 ) -> Message:
     now = now or utcnow()
-    body = _normalize_body(body)
     conversation, match = get_conversation(
         db,
         conversation_id=conversation_id,
@@ -143,7 +153,6 @@ def send_message(
         raise ChatUnavailable("sender_inactive")
     if recipient is None or recipient.status != "ACTIVE":
         raise ChatUnavailable("recipient_inactive")
-
     if _blocked(db, sender_id, recipient_id):
         raise ChatUnavailable("blocked")
 
@@ -161,10 +170,28 @@ def send_message(
         if existing is not None:
             return existing
 
+    message_kind = "text"
+    if media is None:
+        stored_body = _normalize_body(body)
+    else:
+        if storage is None:
+            raise MessageValidationError("chat_media_storage_unavailable")
+        try:
+            normalized_media = validate_uploaded_media(
+                storage=storage,
+                user_id=sender_id,
+                conversation_id=conversation.id,
+                media=media,
+            )
+            stored_body = encode_media_body(normalized_media, body)
+            message_kind = str(normalized_media.get("kind") or "media")
+        except ChatMediaError as exc:
+            raise MessageValidationError(str(exc)) from exc
+
     message = Message(
         conversation_id=conversation.id,
         sender=sender_id,
-        body=body,
+        body=stored_body,
         client_message_id=client_message_id,
         created_at=now,
     )
@@ -205,6 +232,7 @@ def send_message(
             metadata_json={
                 "conversation_id": conversation.id,
                 "match_id": match.id,
+                "message_kind": message_kind,
             },
             created_at=now,
         )
@@ -215,6 +243,90 @@ def send_message(
 
     enqueue_notification(db, notification_id=notification.id, now=now)
     return message
+
+
+def _message_payload(row: Message, *, user_id: int) -> dict[str, Any]:
+    decoded = decode_media_body(row.body)
+    payload: dict[str, Any] = {
+        "id": row.id,
+        "sender_id": row.sender,
+        "body": row.body,
+        "created_at": row.created_at,
+        "read_at": row.read_at,
+        "is_mine": row.sender == user_id,
+    }
+    if decoded is not None:
+        payload["body"] = decoded.get("caption", "")
+        payload["media"] = public_media_payload(decoded, message_id=row.id)
+    return payload
+
+
+def message_payload(row: Message, *, user_id: int) -> dict[str, Any]:
+    return _message_payload(row, user_id=user_id)
+
+
+def get_message_media(
+    db: Session,
+    *,
+    message_id: int,
+    user_id: int,
+) -> dict[str, Any]:
+    message = db.get(Message, message_id)
+    if message is None:
+        raise ChatUnavailable("message_not_found")
+    get_conversation(
+        db,
+        conversation_id=message.conversation_id,
+        user_id=user_id,
+    )
+    media = decode_media_body(message.body)
+    if media is None:
+        raise ChatUnavailable("message_has_no_media")
+    expected_prefix = (
+        f"users/{int(message.sender)}/chat/{int(message.conversation_id)}/"
+    )
+    if not str(media.get("object_key", "")).startswith(expected_prefix):
+        raise ChatUnavailable("invalid_message_media")
+    return media
+
+
+def prepare_media_upload(
+    db: Session,
+    *,
+    conversation_id: int,
+    user_id: int,
+    mime: str,
+    kind: str,
+    size: int,
+    name: str,
+    storage: Any,
+) -> dict[str, Any]:
+    conversation, match = get_conversation(
+        db,
+        conversation_id=conversation_id,
+        user_id=user_id,
+    )
+    other_id = _other_user(match, user_id)
+    if _blocked(db, user_id, other_id):
+        raise ChatUnavailable("blocked")
+    sender = db.get(User, user_id)
+    recipient = db.get(User, other_id)
+    if sender is None or sender.status != "ACTIVE":
+        raise ChatUnavailable("sender_inactive")
+    if recipient is None or recipient.status != "ACTIVE":
+        raise ChatUnavailable("recipient_inactive")
+    try:
+        return prepare_object_upload(
+            storage=storage,
+            user_id=user_id,
+            conversation_id=conversation.id,
+            mime=mime,
+            kind=kind,
+            size=size,
+            name=name,
+        )
+    except ChatMediaError as exc:
+        raise MessageValidationError(str(exc)) from exc
 
 
 def list_messages(
@@ -242,17 +354,7 @@ def list_messages(
         ).scalars()
     )
     rows.reverse()
-    return [
-        {
-            "id": row.id,
-            "sender_id": row.sender,
-            "body": row.body,
-            "created_at": row.created_at,
-            "read_at": row.read_at,
-            "is_mine": row.sender == user_id,
-        }
-        for row in rows
-    ]
+    return [_message_payload(row, user_id=user_id) for row in rows]
 
 
 def mark_read(
@@ -336,21 +438,24 @@ def list_conversations(
             .order_by(Message.id.desc())
             .limit(1)
         ).scalar_one_or_none()
+        last_payload = None
+        if last is not None:
+            last_payload = _message_payload(last, user_id=user_id)
+            decoded = decode_media_body(last.body)
+            if decoded is not None:
+                last_payload["body"] = preview_text(
+                    decoded,
+                    str(last_payload.get("body") or ""),
+                )
+                last_payload.pop("media", None)
+
         result.append(
             {
                 "conversation_id": conversation.id,
                 "match_id": match.id,
                 "other_user_id": other_id,
                 "other_display_name": profile.display_name if profile else "",
-                "last_message": None
-                if last is None
-                else {
-                    "id": last.id,
-                    "sender_id": last.sender,
-                    "body": last.body,
-                    "created_at": last.created_at,
-                    "read_at": last.read_at,
-                },
+                "last_message": last_payload,
                 "unread_count": unread_count(
                     db,
                     conversation_id=conversation.id,
