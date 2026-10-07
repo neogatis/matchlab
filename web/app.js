@@ -2252,12 +2252,13 @@
         '<div class="setting-line notification-state"><div><b>'+esc(stateLabel)+'</b><span class="muted">'+esc(stateText)+'</span></div>'+
           (permission==="granted"?'<span class="tag">Включены</span>':permission==="default"?'<button class="primary" id="request-browser-notifications">Включить</button>':'')+
         '</div>'+
+        '<div id="notifications-status" class="status" hidden></div>'+
       '</section></main>'+nav("profile");
     bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
     const btn=document.getElementById("request-browser-notifications");
     if(btn)btn.onclick=async()=>{
       try{await Notification.requestPermission();await renderNotifications()}catch{
-        inlineStatus("form-status","Не удалось изменить настройку уведомлений.",true);
+        inlineStatus("notifications-status","Не удалось изменить настройку уведомлений.",true);
       }
     };
   }
