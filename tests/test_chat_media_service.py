@@ -234,9 +234,10 @@ class ChatMediaServiceTests(unittest.TestCase):
             db.commit()
 
         with Session(self.engine) as db:
+            ticket = db.query(ChatMediaUploadTicket).one()
             result = chat.expire_chat_media_uploads(
                 db,
-                now=self.now + timedelta(minutes=20),
+                now=ticket.expires_at + timedelta(seconds=1),
             )
             db.commit()
             self.assertEqual(result["expired"], 1)
