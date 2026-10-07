@@ -161,6 +161,16 @@ class S3PhotoStorage:
             etag=(str(result.get("ETag") or "").strip('"') or None),
         )
 
+    def get_prefix(self, object_key: str, *, max_bytes: int = 4096) -> bytes:
+        if max_bytes < 1:
+            return b""
+        result = self.client.get_object(
+            Bucket=self.bucket,
+            Key=object_key,
+            Range=f"bytes=0-{max_bytes - 1}",
+        )
+        return result["Body"].read(max_bytes)
+
     def get_bytes(self, object_key: str, *, max_bytes: int) -> bytes:
         result = self.client.get_object(Bucket=self.bucket, Key=object_key)
         body = result["Body"]
