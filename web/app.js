@@ -96,27 +96,82 @@
     .find(v => v.startsWith(name + "="))
     ?.slice(name.length + 1) || "";
 
+  const FRIENDLY_ERRORS = {
+    invalid_credentials:"Неверный логин или пароль.",
+    invalid_or_expired_challenge:"Код устарел или введён неверно. Запросите новый.",
+    rate_limited:"Слишком много попыток. Попробуйте немного позже.",
+    phone_already_registered:"Этот номер уже зарегистрирован.",
+    email_already_registered:"Этот email уже зарегистрирован.",
+    blocked:"Действие недоступно.",
+    sender_inactive:"Отправка сообщений сейчас недоступна.",
+    recipient_inactive:"Этому пользователю сейчас нельзя отправить сообщение.",
+    message_is_empty:"Введите сообщение.",
+    message_too_long:"Сообщение слишком длинное.",
+    chat_media_too_large:"Файл слишком большой.",
+    unsupported_chat_media_type:"Этот формат файла пока не поддерживается.",
+    invalid_chat_media_content:"Не удалось проверить файл. Выберите другой.",
+    chat_media_upload_not_prepared:"Не удалось подготовить вложение. Попробуйте ещё раз.",
+    chat_media_upload_expired:"Время загрузки истекло. Выберите файл ещё раз.",
+    chat_media_caption_too_long:"Подпись к вложению должна быть короче 1000 символов.",
+    deletion_already_requested:"Запрос на удаление аккаунта уже принят.",
+    underage:"MatchLab доступен только пользователям 18+.",
+    profile_not_found:"Профиль пока не готов.",
+    market_unavailable:"Выберите доступный город.",
+  };
+
+  function friendlyError(error, fallback="Что-то пошло не так. Попробуйте ещё раз.") {
+    const code=String(error?.code||"").trim().toLowerCase();
+    if(FRIENDLY_ERRORS[code])return FRIENDLY_ERRORS[code];
+    const statusCode=Number(error?.status||0);
+    if(statusCode===401)return "Сессия завершилась. Войдите в аккаунт ещё раз.";
+    if(statusCode===429)return "Слишком много попыток. Попробуйте немного позже.";
+    if(statusCode>=500)return "Сервис временно недоступен. Попробуйте ещё раз чуть позже.";
+    const message=String(error?.message||"").trim();
+    const looksTechnical=/(http\s*\d|csrf|backend|api\b|sql|postgres|s3|fcm|token|stack|trace|exception|invalid_|not_|_required|_failed|_error)/i.test(message);
+    if(message && /^[А-Яа-яЁё]/.test(message) && !looksTechnical)return message;
+    return fallback;
+  }
+
+  async function refreshCsrf(){
+    try{
+      await fetch("/api/v1/auth/csrf",{
+        method:"GET",
+        credentials:"include",
+        headers:{"Accept":"application/json"},
+      });
+    }catch{}
+  }
+
   async function api(path, options={}) {
-    const method = options.method || "GET";
-    const headers = {"Accept":"application/json", ...(options.headers || {})};
-    if (!["GET","HEAD","OPTIONS"].includes(method)) {
-      headers["Content-Type"] = "application/json";
-      headers["X-CSRF-Token"] = decodeURIComponent(cookie("ml_csrf"));
-      headers["Origin"] = location.origin;
+    const csrfRetried=!!options._csrfRetried;
+    const cleanOptions={...options};
+    delete cleanOptions._csrfRetried;
+    const method=String(cleanOptions.method||"GET").toUpperCase();
+    const unsafe=!["GET","HEAD","OPTIONS"].includes(method);
+    if(unsafe&&!cookie("ml_csrf"))await refreshCsrf();
+    const headers={"Accept":"application/json",...(cleanOptions.headers||{})};
+    if(unsafe){
+      headers["Content-Type"]="application/json";
+      headers["X-CSRF-Token"]=decodeURIComponent(cookie("ml_csrf"));
+      headers["Origin"]=location.origin;
     }
-    const response = await fetch(path, {
+    const response=await fetch(path,{
       credentials:"include",
-      ...options,
+      ...cleanOptions,
       method,
       headers,
     });
-    const text = await response.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch {}
-    if (!response.ok) {
-      const error = new Error(data.message || data.error || "HTTP " + response.status);
-      error.status = response.status;
-      error.code = data.error;
+    const text=await response.text();
+    let data={};
+    try{data=text?JSON.parse(text):{}}catch{}
+    if(!response.ok){
+      if(response.status===403&&unsafe&&!csrfRetried){
+        await refreshCsrf();
+        return api(path,{...cleanOptions,_csrfRetried:true});
+      }
+      const error=new Error(data.message||data.error||"request_failed");
+      error.status=response.status;
+      error.code=data.error;
       throw error;
     }
     return data;
@@ -299,7 +354,7 @@
         document.getElementById("sms-new-password").hidden = false;
         document.getElementById("sms-verify-btn").hidden = false;
         status("Код отправлен. Введите 6 цифр.");
-      } catch(e) { status("Не удалось отправить код: " + e.message, true); }
+      } catch(e) { status("Не удалось отправить код: " + friendlyError(e), true); }
     };
     document.getElementById("sms-verify-btn").onclick = async () => {
       const phone = document.getElementById("sms-phone").value.trim();
@@ -386,7 +441,7 @@
         document.getElementById("reset-phone-password").hidden=false;
         document.getElementById("reset-phone-confirm").hidden=false;
         status("Код отправлен. Введите код и новый пароль.");
-      }catch(e){status("Не удалось отправить код: "+e.message,true)}
+      }catch(e){status("Не удалось отправить код: "+friendlyError(e),true)}
     };
 
     document.getElementById("reset-phone-confirm").onclick=async()=>{
@@ -413,7 +468,7 @@
         }else{
           status("Если такой email зарегистрирован, ссылка уже отправлена.");
         }
-      }catch(e){status("Не удалось отправить инструкцию: "+e.message,true)}
+      }catch(e){status("Не удалось отправить инструкцию: "+friendlyError(e),true)}
     };
   }
 
@@ -461,7 +516,7 @@
       } catch(e) {
         status(e.code === "phone_already_registered"
           ? "Этот номер уже зарегистрирован. Перейдите во «Вход»."
-          : "Не удалось отправить код: " + e.message, true);
+          : "Не удалось отправить код: " + friendlyError(e), true);
       }
     };
     document.getElementById("reg-phone-finish").onclick = async () => {
@@ -476,7 +531,7 @@
           attribution:attribution()
         });
         await afterAuth();
-      } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
+      } catch(e) { status("Не удалось зарегистрироваться: " + friendlyError(e), true); }
     };
     document.getElementById("reg-email-finish").onclick = async () => {
       if(!document.getElementById("reg-legal").checked)return status("Подтвердите 18+ и принятие Условий и Политики конфиденциальности.",true);
@@ -492,7 +547,7 @@
           attribution:attribution()
         });
         await afterAuth();
-      } catch(e) { status("Не удалось зарегистрироваться: " + e.message, true); }
+      } catch(e) { status("Не удалось зарегистрироваться: " + friendlyError(e), true); }
     };
   }
 
@@ -752,7 +807,7 @@
         } catch(e) {
           btn.disabled = false;
           btn.textContent = "Хочу познакомиться";
-          alert("Сейчас действие недоступно: " + e.message);
+          alert("Сейчас действие недоступно: " + friendlyError(e));
         }
       };
     });
@@ -771,7 +826,7 @@
         }catch(e){
           btn.disabled=false;
           btn.textContent="Пока не подходит";
-          alert("Не удалось учесть выбор: "+e.message);
+          alert("Не удалось учесть выбор: "+friendlyError(e));
         }
       };
     });
@@ -864,7 +919,7 @@
         await post("/api/v1/safety/report",{user_id:userId,reason:document.getElementById("safety-reason").value});
         msg("Жалоба отправлена модераторам.");
         btn.textContent="Жалоба отправлена ✓";
-      }catch(e){btn.disabled=false;msg("Не удалось отправить жалобу: "+e.message,true)}
+      }catch(e){btn.disabled=false;msg("Не удалось отправить жалобу: "+friendlyError(e),true)}
     };
     document.getElementById("safety-block").onclick=async()=>{
       if(!confirm("Заблокировать "+name+"? Человек исчезнет из подбора и не сможет писать вам."))return;
@@ -877,7 +932,7 @@
         alert("Пользователь заблокирован.");
         if((location.hash||"").startsWith("#chat"))setRoute("chats");
         else setRoute("home");
-      }catch(e){btn.disabled=false;msg("Не удалось заблокировать: "+e.message,true)}
+      }catch(e){btn.disabled=false;msg("Не удалось заблокировать: "+friendlyError(e),true)}
     };
   }
 
@@ -900,7 +955,7 @@
           compatibility_score:c.compatibility_score, mutual_fit_score:c.mutual_fit_score
         };
         modal.remove(); setRoute("chat");
-      } catch(e) { alert(e.message); }
+      } catch(e) { alert(friendlyError(e)); }
     };
   }
 
@@ -928,7 +983,7 @@
         const conv=await post("/api/v1/matches/conversation",{match_id:matchId});
         state.currentConversation={conversation_id:conv.conversation_id,match_id:matchId,profile:match?.profile||{},compatibility_score:match?.compatibility_score,mutual_fit_score:match?.mutual_fit_score};
         setRoute("chat");
-      }catch(e){alert(e.message)}
+      }catch(e){alert(friendlyError(e))}
     });
   }
 
@@ -1249,6 +1304,7 @@
     }
     const input=document.getElementById("message-input");
     const caption=String(input?.value||"").trim();
+    if(caption.length>1000)return chatStatus("Подпись к фото или видео — максимум 1000 символов.",true);
     if(input){input.value="";input.style.height="auto"}
     setComposerBusy(true);
     chatStatus(kind==="voice"?"Отправляем голосовое…":kind==="video"?"Загружаем видео…":"Загружаем фото…");
@@ -1316,7 +1372,7 @@
       if(optimistic){
         optimistic.classList.remove("pending");
         const t=optimistic.querySelector(".bubble-time");
-        if(t)t.textContent=((response.message?.created_at||"").slice(11,16)||"сейчас");
+        if(t)t.textContent=((responsfriendlyError(e)?.created_at||"").slice(11,16)||"сейчас");
         optimistic.removeAttribute("data-client-message");
       }
     }catch(e){
@@ -1423,7 +1479,7 @@
         btn.textContent="Письмо отправлено ✓";
       }catch(e){
         btn.disabled=false;btn.textContent="Отправить ещё раз";
-        onboardingStatus("Не удалось отправить письмо: "+e.message,true);
+        onboardingStatus("Не удалось отправить письмо: "+friendlyError(e),true);
       }
     };
   }
@@ -1584,7 +1640,7 @@
             preferred_locale:"ru-KZ"
           });
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus("Проверьте данные: "+e.message,true)}
+        }catch(e){onboardingStatus("Проверьте данные: "+friendlyError(e),true)}
       };
     } else if(step==="relationship"){
       let relationshipAnswer=null;
@@ -1600,7 +1656,7 @@
         try{
           await post("/api/v1/profile/relationship",{in_relationship:relationshipAnswer==="yes",openness:pick("ob-openness").value});
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus(e.message,true)}
+        }catch(e){onboardingStatus(friendlyError(e),true)}
       };
     } else if(step==="readiness"){
       pick("ob-save-readiness").onclick=async()=>{
@@ -1608,7 +1664,7 @@
         try{
           await post("/api/v1/profile/readiness",{chat:pick("ob-chat").value,offline:pick("ob-offline").value});
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus(e.message,true)}
+        }catch(e){onboardingStatus(friendlyError(e),true)}
       };
     } else if(step==="details"){
       pick("ob-save-details").onclick=async()=>{
@@ -1616,7 +1672,7 @@
         try{
           await post("/api/v1/profile/details",{height:Number(pick("ob-height").value),dating_goal:pick("ob-goal").value,children_status:pick("ob-children").value,children_plans:pick("ob-children-plans").value,smoking:pick("ob-smoking").value,alcohol:pick("ob-alcohol").value,lifestyle:pick("ob-lifestyle").value,bio:pick("ob-bio").value.trim(),religion:pick("ob-religion").value.trim(),nationality:""});
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus("Не удалось сохранить: "+e.message,true)}
+        }catch(e){onboardingStatus("Не удалось сохранить: "+friendlyError(e),true)}
       };
     } else if(step==="partner_preferences"){
       const valueOrIgnore=(key,id,wrap=v=>v)=>{
@@ -1669,7 +1725,7 @@
           onboardingStatus("Сохраняем критерии…");
           await post("/api/v1/preferences",{preferences:prefs});
           await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus(e.message||"Проверьте критерии",true)}
+        }catch(e){onboardingStatus(friendlyError(e)||"Проверьте критерии",true)}
       };
     } else {
       pick("ob-finish-later").onclick=()=>setRoute("home");
@@ -1726,7 +1782,7 @@
   async function renderQuestionnaireStep(){
     let q;
     try{q=await api("/api/v1/questionnaire/adaptive");}
-    catch(e){return root.innerHTML=onboardingChrome("questionnaire",'<div class="onboarding-card"><h1>Анкета пока недоступна</h1><p class="muted">'+esc(e.message)+'</p></div>')}
+    catch(e){return root.innerHTML=onboardingChrome("questionnaire",'<div class="onboarding-card"><h1>Анкета пока недоступна</h1><p class="muted">'+esc(friendlyError(e))+'</p></div>')}
 
     if(q.complete){
       await loadMe();
@@ -1734,6 +1790,9 @@
     }
     const progress=q.progress||{};
     const question=q.question||{};
+    if(q.phase==="ADAPTIVE"){
+      setTimeout(()=>post("/api/v1/questionnaire/adaptive/prefetch",{}).catch(()=>{}),120);
+    }
     root.innerHTML=onboardingChrome("questionnaire",
       '<div class="onboarding-card questionnaire-card">'+
       '<div class="question-meta"><span>'+esc(question.axis_label||"Совместимость")+'</span><b>'+esc(progress.percent||0)+'%</b></div>'+
@@ -1773,7 +1832,7 @@
         answerButtons.forEach(x=>x.disabled=false);
         continueAnswer.disabled=false;
         continueAnswer.textContent="Продолжить →";
-        onboardingStatus("Не удалось сохранить ответ: "+e.message,true);
+        onboardingStatus("Не удалось сохранить ответ: "+friendlyError(e),true);
       }
     };
   }
@@ -1862,7 +1921,7 @@
       '</div></section>'+
       '<section class="profile-menu-section profile-v19-section"><div class="profile-menu-heading"><span>Аккаунт и безопасность</span></div><div class="profile-menu profile-v19-menu">'+
         profileMenuRow("❤️","Статус знакомств","Активность и пауза","dating-status")+
-        profileMenuRow("🔔","Уведомления","Push и разрешения","notifications")+
+        profileMenuRow("🔔","Уведомления","Сообщения и совпадения","notifications")+
         profileMenuRow("🛡","Безопасность","Блокировки и жалобы","safety")+
         profileMenuRow("⚙️","Настройки аккаунта","Вход, данные и удаление","settings")+
       '</div></section>'+
@@ -1927,7 +1986,7 @@
         inlineStatus("profile-edit-status","Изменения сохранены ✓");
         btn.disabled=false;
       }catch(e){
-        btn.disabled=false;inlineStatus("profile-edit-status","Не удалось сохранить: "+e.message,true);
+        btn.disabled=false;inlineStatus("profile-edit-status","Не удалось сохранить: "+friendlyError(e),true);
       }
     };
   }
@@ -2011,7 +2070,7 @@
         await post("/api/v1/preferences",{preferences:prefs});
         await loadMe();
         inlineStatus("preferences-status","Критерии сохранены ✓");
-      }catch(e){inlineStatus("preferences-status",e.message||"Не удалось сохранить критерии",true)}
+      }catch(e){inlineStatus("preferences-status",friendlyError(e)||"Не удалось сохранить критерии",true)}
       finally{button.disabled=false}
     };
   }
@@ -2045,7 +2104,7 @@
         api("/api/v1/identity/verification")
       ]);
     }catch(e){
-      root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(e.message)+'</p></section></main>'+nav("profile");
+      root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(friendlyError(e))+'</p></section></main>'+nav("profile");
       bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");return;
     }
     const items=(data.photos||[]).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
@@ -2094,11 +2153,11 @@
     bindCommon();
     document.getElementById("profile-back").onclick=()=>setRoute("profile");
     document.querySelectorAll("[data-photo-main]").forEach(btn=>btn.onclick=async()=>{
-      try{await post("/api/v1/photos/main",{photo_id:Number(btn.dataset.photoMain)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось выбрать главное фото: "+e.message,true)}
+      try{await post("/api/v1/photos/main",{photo_id:Number(btn.dataset.photoMain)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось выбрать главное фото: "+friendlyError(e),true)}
     });
     document.querySelectorAll("[data-photo-delete]").forEach(btn=>btn.onclick=async()=>{
       if(!confirm("Удалить эту фотографию?"))return;
-      try{await post("/api/v1/photos/delete",{photo_id:Number(btn.dataset.photoDelete)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось удалить фото: "+e.message,true)}
+      try{await post("/api/v1/photos/delete",{photo_id:Number(btn.dataset.photoDelete)});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось удалить фото: "+friendlyError(e),true)}
     });
     document.querySelectorAll("[data-photo-move]").forEach(btn=>btn.onclick=async()=>{
       const id=Number(btn.dataset.photoMove),dir=Number(btn.dataset.dir);
@@ -2106,7 +2165,7 @@
       const index=ids.indexOf(id),next=index+dir;
       if(index<0||next<0||next>=ids.length)return;
       [ids[index],ids[next]]=[ids[next],ids[index]];
-      try{await post("/api/v1/photos/reorder",{photo_ids:ids});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось изменить порядок: "+e.message,true)}
+      try{await post("/api/v1/photos/reorder",{photo_ids:ids});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось изменить порядок: "+friendlyError(e),true)}
     });
     const upload=document.getElementById("profile-photo-upload");
     if(upload)upload.onchange=async e=>{
@@ -2166,27 +2225,40 @@
         await post("/api/v1/profile/relationship",{in_relationship:inRelationship,openness});
         await post("/api/v1/profile/readiness",{chat:document.getElementById("dating-chat").value,offline:document.getElementById("dating-offline").value});
         await loadMe();btn.disabled=false;inlineStatus("dating-status-message","Статус обновлён ✓");
-      }catch(e){btn.disabled=false;inlineStatus("dating-status-message","Не удалось сохранить: "+e.message,true)}
+      }catch(e){btn.disabled=false;inlineStatus("dating-status-message","Не удалось сохранить: "+friendlyError(e),true)}
     };
   }
 
   async function renderNotifications(){
     clearPoller(); loading("profile");
-    let devices={devices:[]};
-    try{devices=await api("/api/v1/push/devices");}catch{}
     const permission=("Notification" in window)?Notification.permission:"unsupported";
-    const permissionLabels={granted:"Разрешены",denied:"Запрещены",default:"Не выбрано",unsupported:"Не поддерживаются"};
+    const stateLabel={
+      granted:"Уведомления включены",
+      denied:"Уведомления отключены",
+      default:"Уведомления пока выключены",
+      unsupported:"Уведомления недоступны",
+    }[permission]||"Уведомления";
+    const stateText={
+      granted:"Вы сможете вовремя узнавать о новых совпадениях, сообщениях и важных обновлениях.",
+      denied:"Разрешить уведомления можно в настройках браузера или устройства.",
+      default:"Включите уведомления, чтобы не пропускать новые совпадения и сообщения.",
+      unsupported:"На этом устройстве уведомления сейчас недоступны. Сам MatchLab продолжит работать как обычно.",
+    }[permission]||"";
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Уведомления")+
-      '<section class="card settings-card"><div class="eyebrow">Уведомления</div><h2>Не пропускайте важные совпадения</h2>'+
-      '<div class="setting-line"><div><b>Разрешение браузера</b><span class="muted">'+esc(permissionLabels[permission]||permission)+'</span></div>'+
-      (permission==="default"?'<button class="secondary" id="request-browser-notifications">Разрешить</button>':'')+'</div>'+
-      '<div class="setting-line"><div><b>Push-устройства</b><span class="muted">Подключено: '+esc((devices.devices||[]).filter(x=>x.enabled).length)+'</span></div><span class="tag">FCM</span></div>'+
-      '<div class="insight-box"><b>Что уже работает</b><p>Backend умеет регистрировать push-устройства и доставлять системные уведомления. Для web-push нужна отдельная подписка браузера — её подключим после основного P0 UX.</p></div>'+
+      '<section class="card settings-card notifications-friendly">'+
+        '<div class="eyebrow">Уведомления</div>'+
+        '<h2>Не пропускайте важные совпадения</h2>'+
+        '<p class="muted">Получайте уведомления о новых совпадениях, сообщениях и важной активности в MatchLab.</p>'+
+        '<div class="setting-line notification-state"><div><b>'+esc(stateLabel)+'</b><span class="muted">'+esc(stateText)+'</span></div>'+
+          (permission==="granted"?'<span class="tag">Включены</span>':permission==="default"?'<button class="primary" id="request-browser-notifications">Включить</button>':'')+
+        '</div>'+
       '</section></main>'+nav("profile");
     bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
     const btn=document.getElementById("request-browser-notifications");
     if(btn)btn.onclick=async()=>{
-      try{await Notification.requestPermission();await renderNotifications()}catch{}
+      try{await Notification.requestPermission();await renderNotifications()}catch{
+        inlineStatus("form-status","Не удалось изменить настройку уведомлений.",true);
+      }
     };
   }
 
@@ -2206,7 +2278,7 @@
       '</section></main>'+nav("profile");
     bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");
     document.querySelectorAll("[data-unblock-user]").forEach(btn=>btn.onclick=async()=>{
-      try{await post("/api/v1/safety/unblock",{user_id:Number(btn.dataset.unblockUser)});await renderSafety()}catch(e){inlineStatus("safety-page-status","Не удалось разблокировать: "+e.message,true)}
+      try{await post("/api/v1/safety/unblock",{user_id:Number(btn.dataset.unblockUser)});await renderSafety()}catch(e){inlineStatus("safety-page-status","Не удалось разблокировать: "+friendlyError(e),true)}
     });
   }
 
@@ -2223,11 +2295,11 @@
       '<section class="card settings-card"><div class="eyebrow">Данные и документы</div>'+
       '<a class="settings-link" href="/privacy" target="_blank" rel="noopener"><b>Политика конфиденциальности</b><span>Открыть ↗</span></a>'+
       '<a class="settings-link" href="/terms" target="_blank" rel="noopener"><b>Условия использования</b><span>Открыть ↗</span></a>'+
-      '<button class="settings-link button-link" id="export-data"><b>Скачать мои данные</b><span>JSON ↓</span></button>'+
+      '<button class="settings-link button-link" id="export-data"><b>Скачать копию моих данных</b><span>Скачать ↓</span></button>'+
       '</section>'+
-      '<section class="card settings-card danger-zone"><div class="eyebrow">Опасная зона</div><h2>Удаление аккаунта</h2>'+
-      '<p class="muted">Для защиты от случайного удаления введите <b>DELETE</b>. После запроса аккаунт станет недоступен, а удаление пройдёт по политике хранения данных.</p>'+
-      '<input class="input" id="delete-confirmation" placeholder="Введите DELETE" autocomplete="off">'+
+      '<section class="card settings-card danger-zone"><div class="eyebrow">Управление аккаунтом</div><h2>Удаление аккаунта</h2>'+
+      '<p class="muted">Для защиты от случайного удаления введите <b>УДАЛИТЬ</b>. После подтверждения аккаунт станет недоступен и начнётся удаление данных.</p>'+
+      '<input class="input" id="delete-confirmation" placeholder="Введите УДАЛИТЬ" autocomplete="off">'+
       '<button class="danger-btn full" id="delete-account" disabled>Удалить аккаунт</button>'+
       '<div id="settings-status" class="status" hidden></div>'+
       '</section>'+
@@ -2242,14 +2314,14 @@
         const url=URL.createObjectURL(blob);
         const a=document.createElement("a");a.href=url;a.download="matchlab-my-data.json";a.click();
         setTimeout(()=>URL.revokeObjectURL(url),1000);
-      }catch(e){inlineStatus("settings-status","Не удалось подготовить данные: "+e.message,true)}
+      }catch(e){inlineStatus("settings-status","Не удалось подготовить данные: "+friendlyError(e),true)}
       btn.disabled=false;
     };
     const deletionInput=document.getElementById("delete-confirmation");
     const deletionBtn=document.getElementById("delete-account");
-    deletionInput.oninput=()=>{deletionBtn.disabled=deletionInput.value.trim()!=="DELETE"};
+    deletionInput.oninput=()=>{deletionBtn.disabled=deletionInput.value.trim().toUpperCase()!=="УДАЛИТЬ"};
     deletionBtn.onclick=async()=>{
-      if(deletionInput.value.trim()!=="DELETE")return;
+      if(deletionInput.value.trim().toUpperCase()!=="УДАЛИТЬ")return;
       if(!confirm("Удалить аккаунт MatchLab? Это действие запускает процедуру удаления данных."))return;
       deletionBtn.disabled=true;
       try{
@@ -2258,7 +2330,7 @@
         location.hash="";
         renderAuth("login");
         status("Запрос на удаление аккаунта принят.");
-      }catch(e){deletionBtn.disabled=false;inlineStatus("settings-status","Не удалось удалить аккаунт: "+e.message,true)}
+      }catch(e){deletionBtn.disabled=false;inlineStatus("settings-status","Не удалось удалить аккаунт: "+friendlyError(e),true)}
     };
     document.getElementById("settings-logout").onclick=async()=>{
       try{await post("/api/v1/auth/logout",{});}catch{}
