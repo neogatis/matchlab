@@ -8,6 +8,7 @@ on:
       - "app/chat/**"
       - "app/interests/**"
       - "app/matching/**"
+      - "tests/test_chat_media_service.py"
       - ".github/workflows/phase35-web-core.yml"
   pull_request:
 
