@@ -661,7 +661,7 @@
         '<div class="compat-pill">' + esc(score) + '% совместимость</div>' +
       '</div>' +
       '<div class="candidate-body">' +
-        '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div>' + (c.is_test_profile?'<span class="test-profile-badge">Тестовый профиль</span>':'') + '</div></div>' +
+        '<div class="candidate-title"><div><h2>' + esc(name + age) + '</h2><div class="muted">' + esc(c.city || "") + '</div><div class="candidate-badges">' + (c.identity_verified?'<span class="verified-profile-badge">✓ Личность подтверждена</span>':'') + (c.is_test_profile?'<span class="test-profile-badge">Тестовый профиль</span>':'') + '</div></div></div>' +
         '<div class="tags">' + compatibilityReason(c) + '</div>' +
         (c.bio ? '<p>' + esc(c.bio) + '</p>' : '') +
         '<div class="actions candidate-actions">' +
@@ -1278,8 +1278,9 @@
         '<button class="primary full" id="ob-save-preferences">Сохранить критерии →</button></div>';
     } else {
       const photos=state.onboarding?.photos||{};
-      body='<div class="onboarding-card"><div class="eyebrow">Последний шаг</div><h1>Добавьте фотографии</h1><p class="muted">Нужно минимум 2 одобренных фото. Первое станет главным.</p>'+
-        '<div class="photo-progress-big"><b>'+esc(photos.approved||0)+'/2</b><span>одобрено</span></div>'+
+      const photoMinimum=Number(photos.minimum||1);
+      body='<div class="onboarding-card"><div class="eyebrow">Последний шаг</div><h1>Добавьте фотографию</h1><p class="muted">Для готовности профиля достаточно 1 одобренного фото. Потом можно добавить ещё — рекомендуем 3–5.</p>'+
+        '<div class="photo-progress-big"><b>'+esc(photos.approved||0)+'/'+esc(photoMinimum)+'</b><span>минимум одобрено</span></div>'+
         '<label class="photo-upload"><input type="file" id="ob-photo" accept="image/jpeg,image/png,image/webp"><span>＋ Добавить фото</span></label>'+
         '<p class="muted small">После загрузки фото отправляется на модерацию. Пока оно проверяется, можно пользоваться приложением.</p>'+
         '<button class="secondary full" id="ob-finish-later">Перейти в приложение</button></div>';
@@ -1546,8 +1547,13 @@
     const p=state.profile?.profile||{};
     const c=state.profile?.completion||{};
     const pct=completionPercent(c);
-    let photoData={photos:[]};
-    try{photoData=await api("/api/v1/photos");}catch{}
+    let photoData={photos:[]},identity={status:"NOT_STARTED",verified:false};
+    try{
+      [photoData,identity]=await Promise.all([
+        api("/api/v1/photos"),
+        api("/api/v1/identity/verification")
+      ]);
+    }catch{}
     const photos=photoData.photos||[];
     const mainPhoto=photos.find(x=>x.is_main)||photos[0];
     const age=ageFromDob(p.dob);
@@ -1567,7 +1573,7 @@
       '<section class="profile-v19-hero">'+
         '<div class="profile-v19-person">'+
           '<div class="profile-v19-avatar-wrap">'+photoHtml+'<button class="profile-avatar-edit" data-route="photos" aria-label="Изменить фото">✎</button></div>'+
-          '<div class="profile-v19-person-copy"><h1>'+esc(p.display_name||"MatchLab")+(age?", "+age:"")+'</h1><p class="profile-location">⌖ '+esc(p.city||"Город не указан")+'</p><span class="profile-state"><i></i>'+esc(statusLabels[p.relationship_status]||"Настройте статус знакомств")+'</span></div>'+
+          '<div class="profile-v19-person-copy"><h1>'+esc(p.display_name||"MatchLab")+(age?", "+age:"")+'</h1><p class="profile-location">⌖ '+esc(p.city||"Город не указан")+'</p><div class="profile-state-row"><span class="profile-state"><i></i>'+esc(statusLabels[p.relationship_status]||"Настройте статус знакомств")+'</span>'+(identity.verified?'<span class="identity-badge">✓ Личность подтверждена</span>':'')+'</div></div>'+
         '</div>'+
         '<div class="profile-v19-completion">'+
           '<div class="profile-v19-completion-head"><div><b>Профиль заполнен на '+pct+'%</b><span>'+esc(waitlist.message||"Завершите профиль, чтобы подбор был точнее.")+'</span></div><strong>'+pct+'%</strong></div>'+
@@ -1579,7 +1585,7 @@
         profileMenuRow("👤","Редактировать профиль","Имя, о себе, образ жизни","profile-edit")+
         profileMenuRow("🎯","Кого я ищу","Возраст, цели и важные критерии","preferences")+
         profileMenuRow("🧠","Моя совместимость","Ваши приоритеты по анкете","compatibility",c.questionnaire?"Готово":"")+
-        profileMenuRow("📷","Мои фотографии","Главное фото и порядок","photos",(photoData.progress?.approved||0)+"/2")+
+        profileMenuRow("📷","Мои фотографии","Главное фото, порядок и подтверждение личности","photos",(photoData.progress?.approved||0)+"/"+(photoData.progress?.minimum||1))+
       '</div></section>'+
       '<section class="profile-menu-section profile-v19-section"><div class="profile-menu-heading"><span>Аккаунт и безопасность</span></div><div class="profile-menu profile-v19-menu">'+
         profileMenuRow("❤️","Статус знакомств","Активность и пауза","dating-status")+
@@ -1759,16 +1765,42 @@
 
   async function renderPhotos(){
     clearPoller(); loading("profile");
-    let data={photos:[],progress:{}};
-    try{data=await api("/api/v1/photos");}catch(e){
+    let data={photos:[],progress:{}},identity={status:"NOT_STARTED",verified:false};
+    try{
+      [data,identity]=await Promise.all([
+        api("/api/v1/photos"),
+        api("/api/v1/identity/verification")
+      ]);
+    }catch(e){
       root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+'<section class="card empty"><h3>Фото пока недоступны</h3><p class="muted">'+esc(e.message)+'</p></section></main>'+nav("profile");
       bindCommon();document.getElementById("profile-back").onclick=()=>setRoute("profile");return;
     }
     const items=(data.photos||[]).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     const statusLabel={APPROVED:"Одобрено",PENDING:"На модерации",REJECTED:"Отклонено"};
+    const identityLabel={
+      NOT_STARTED:"Не начато",
+      PENDING:"На проверке",
+      VERIFIED:"Личность подтверждена",
+      REJECTED:"Нужно повторить"
+    };
+    const canSubmitIdentity=identity.status==="NOT_STARTED"||identity.status==="REJECTED";
+    const minimum=Number(data.progress?.minimum||1);
+    const maximum=Number(data.progress?.maximum||5);
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+
-      '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Фотографии</div><h2>'+(data.progress?.approved||0)+'/2 одобрено</h2></div></div>'+
-      '<p class="muted">Первое главное фото показывается в подборе. Можно добавить до лимита, удалить или поменять порядок.</p>'+
+      '<section class="card settings-card identity-verification-card">'+
+        '<div class="identity-verification-head"><div><div class="eyebrow">Доверие и безопасность</div><h2>Подтверждение личности</h2></div><span class="identity-status '+String(identity.status||"").toLowerCase()+'">'+esc(identityLabel[identity.status]||identity.status)+'</span></div>'+
+        '<p class="muted">'+esc(identity.instructions||"Сделайте свежее селфи для проверки.")+'</p>'+
+        (identity.status==="VERIFIED"
+          ? '<div class="identity-verified-box"><b>✓ Личность подтверждена</b><span>Селфи прошло ручную проверку и не показывается другим пользователям.</span></div>'
+          : identity.status==="PENDING"
+          ? '<div class="identity-pending-box"><b>Проверяем селфи</b><span>После решения вы получите уведомление.</span></div>'
+          : '<label class="photo-upload identity-upload"><input type="file" id="identity-selfie-upload" accept="image/jpeg,image/png,image/webp" capture="user"><span>Сделать селфи для проверки</span><small>Селфи не попадёт в вашу галерею</small></label>'+
+            (identity.status==="REJECTED"&&identity.moderation_reason?'<p class="photo-reason">Причина: '+esc(identity.moderation_reason)+'</p>':'')
+        )+
+        '<div id="identity-status-message" class="status" hidden></div>'+
+      '</section>'+
+      '<section class="card settings-card"><div class="section-head compact"><div><div class="eyebrow">Фотографии профиля</div><h2>'+(data.progress?.approved||0)+'/'+minimum+' минимум</h2></div></div>'+
+      '<p class="muted">Для готовности профиля достаточно 1 одобренного фото. Можно добавить до '+maximum+'. Рекомендуем 3–5 фотографий.</p>'+
       '<div class="photo-manager-grid">'+
         items.map((item,index)=>'<article class="photo-manager-item">'+
           (item.url?'<img src="'+esc(item.url)+'" alt="Фото '+(index+1)+'">':'<div class="photo-manager-placeholder">Фото</div>')+
@@ -1781,7 +1813,9 @@
             (index<items.length-1?'<button class="ghost" data-photo-move="'+item.id+'" data-dir="1">→</button>':'')+
             '<button class="ghost danger-text" data-photo-delete="'+item.id+'">Удалить</button>'+
           '</div></article>').join("")+
-        '<label class="photo-upload photo-manager-upload"><input type="file" id="profile-photo-upload" accept="image/jpeg,image/png,image/webp"><span>＋ Добавить фото</span><small>JPG, PNG или WEBP · до 12 МБ</small></label>'+
+        (items.length<maximum
+          ? '<label class="photo-upload photo-manager-upload"><input type="file" id="profile-photo-upload" accept="image/jpeg,image/png,image/webp"><span>＋ Добавить фото</span><small>JPG, PNG или WEBP · до 12 МБ</small></label>'
+          : '<div class="photo-manager-placeholder limit-reached">Добавлено максимум '+maximum+' фото</div>')+
       '</div><div id="photos-status" class="status" hidden></div></section>'+
     '</main>'+nav("profile");
     bindCommon();
@@ -1801,20 +1835,36 @@
       [ids[index],ids[next]]=[ids[next],ids[index]];
       try{await post("/api/v1/photos/reorder",{photo_ids:ids});await renderPhotos()}catch(e){inlineStatus("photos-status","Не удалось изменить порядок: "+e.message,true)}
     });
-    document.getElementById("profile-photo-upload").onchange=async e=>{
-      const f=e.target.files?.[0];if(!f)return;
-      if(f.size>12*1024*1024)return inlineStatus("photos-status","Фото слишком большое. Максимум 12 МБ.",true);
+    const upload=document.getElementById("profile-photo-upload");
+    if(upload)upload.onchange=async e=>{
+      const file=e.target.files?.[0];if(!file)return;
+      if(file.size>12*1024*1024)return inlineStatus("photos-status","Фото слишком большое. Максимум 12 МБ.",true);
       inlineStatus("photos-status","Загружаем фото…");
       try{
-        const prep=await post("/api/v1/photos/prepare",{mime:f.type});
-        const headers=prep.upload?.headers||{"Content-Type":f.type};
-        const up=await fetch(prep.upload.url,{method:"PUT",headers,body:f});
+        const prep=await post("/api/v1/photos/prepare",{mime:file.type});
+        const headers=prep.upload?.headers||{"Content-Type":file.type};
+        const up=await fetch(prep.upload.url,{method:"PUT",headers,body:file});
         if(!up.ok)throw new Error("upload_failed");
         await post("/api/v1/photos/finalize",{ticket:prep.ticket});
         await renderPhotos();
       }catch(err){inlineStatus("photos-status","Не удалось загрузить фото: "+err.message,true)}
     };
+    const selfie=document.getElementById("identity-selfie-upload");
+    if(selfie&&canSubmitIdentity)selfie.onchange=async e=>{
+      const file=e.target.files?.[0];if(!file)return;
+      if(file.size>12*1024*1024)return inlineStatus("identity-status-message","Селфи слишком большое. Максимум 12 МБ.",true);
+      inlineStatus("identity-status-message","Загружаем селфи…");
+      try{
+        const prep=await post("/api/v1/identity/verification/prepare",{mime:file.type});
+        const headers=prep.upload?.headers||{"Content-Type":file.type};
+        const up=await fetch(prep.upload.url,{method:"PUT",headers,body:file});
+        if(!up.ok)throw new Error("upload_failed");
+        await post("/api/v1/identity/verification/finalize",{ticket:prep.ticket});
+        await renderPhotos();
+      }catch(err){inlineStatus("identity-status-message","Не удалось отправить селфи: "+err.message,true)}
+    };
   }
+
 
   async function renderDatingStatus(){
     clearPoller(); loading("profile"); await loadMe();
