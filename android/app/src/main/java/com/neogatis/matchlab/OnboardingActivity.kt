@@ -71,7 +71,7 @@ class OnboardingActivity : AppCompatActivity() {
                 setStatus("Фото загружено и отправлено на модерацию.")
                 loadState()
             }.onFailure { error ->
-                setStatus("Ошибка фото: " + error.message)
+                setStatus("Не удалось загрузить фото. Проверьте интернет и попробуйте ещё раз.")
             }
         }
     }
@@ -693,8 +693,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onFailure { error ->
                     questionnaireAnsweredLocally.remove(token)
                     setStatus(
-                        "Не удалось сохранить ответ. Проверьте интернет и попробуйте ещё раз: " +
-                            error.message
+                        "Не удалось сохранить ответ. Проверьте интернет и попробуйте ещё раз."
                     )
                     lifecycleScope.launch {
                         runCatching {
