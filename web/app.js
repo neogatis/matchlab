@@ -1740,7 +1740,7 @@
           if(!up.ok) throw new Error("upload_failed");
           await post("/api/v1/photos/finalize",{ticket:prep.ticket});
           await loadMe(); renderOnboarding();
-        }catch(err){onboardingStatus("Не удалось загрузить фото: "+err.message,true)}
+        }catch(err){onboardingStatus("Не удалось загрузить фото: "+friendlyError(err),true)}
       };
     }
   }
@@ -2120,7 +2120,7 @@
     const maximum=Number(data.progress?.maximum||5);
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Мои фотографии")+
       '<section class="card settings-card identity-verification-card">'+
-        '<div class="identity-verification-head"><div><div class="eyebrow">Доверие и безопасность</div><h2>Подтверждение личности</h2></div><span class="identity-status '+String(identity.status||"").toLowerCase()+'">'+esc(identityLabel[identity.status]||identity.status)+'</span></div>'+
+        '<div class="identity-verification-head"><div><div class="eyebrow">Доверие и безопасность</div><h2>Подтверждение личности</h2></div><span class="identity-status '+String(identity.status||"").toLowerCase()+'">'+esc(identityLabel[identity.status]||"Проверяем")+'</span></div>'+
         '<p class="muted">'+esc(identity.instructions||"Сделайте свежее селфи для проверки.")+'</p>'+
         (identity.status==="VERIFIED"
           ? '<div class="identity-verified-box"><b>✓ Личность подтверждена</b><span>Селфи прошло ручную проверку и не показывается другим пользователям.</span></div>'
@@ -2136,7 +2136,7 @@
       '<div class="photo-manager-grid">'+
         items.map((item,index)=>'<article class="photo-manager-item">'+
           (item.url?'<img src="'+esc(item.url)+'" alt="Фото '+(index+1)+'">':'<div class="photo-manager-placeholder">Фото</div>')+
-          '<div class="photo-manager-meta"><span class="photo-status '+String(item.moderation_status||"").toLowerCase()+'">'+esc(statusLabel[item.moderation_status]||item.moderation_status||"")+'</span>'+
+          '<div class="photo-manager-meta"><span class="photo-status '+String(item.moderation_status||"").toLowerCase()+'">'+esc(statusLabel[item.moderation_status]||"На проверке")+'</span>'+
           (item.is_main?'<b>Главное</b>':'')+'</div>'+
           (item.moderation_reason?'<small class="photo-reason">'+esc(item.moderation_reason)+'</small>':'')+
           '<div class="photo-manager-actions">'+
@@ -2179,7 +2179,7 @@
         if(!up.ok)throw new Error("upload_failed");
         await post("/api/v1/photos/finalize",{ticket:prep.ticket});
         await renderPhotos();
-      }catch(err){inlineStatus("photos-status","Не удалось загрузить фото: "+err.message,true)}
+      }catch(err){inlineStatus("photos-status","Не удалось загрузить фото: "+friendlyError(err),true)}
     };
     const selfie=document.getElementById("identity-selfie-upload");
     if(selfie&&canSubmitIdentity)selfie.onchange=async e=>{
@@ -2193,7 +2193,7 @@
         if(!up.ok)throw new Error("upload_failed");
         await post("/api/v1/identity/verification/finalize",{ticket:prep.ticket});
         await renderPhotos();
-      }catch(err){inlineStatus("identity-status-message","Не удалось отправить селфи: "+err.message,true)}
+      }catch(err){inlineStatus("identity-status-message","Не удалось отправить селфи: "+friendlyError(err),true)}
     };
   }
 
@@ -2290,7 +2290,7 @@
     const methodLabels={email:"Email",phone:"Телефон",google:"Google",apple:"Apple"};
     root.innerHTML='<main class="page profile-subpage">'+profileBackHeader("Настройки аккаунта")+
       '<section class="card settings-card"><div class="eyebrow">Вход и безопасность</div><h2>Аккаунт</h2>'+
-      '<div class="setting-line"><div><b>Способы входа</b><span class="muted">'+esc((methods.methods||[]).map(x=>methodLabels[x]||x).join(", ")||"Не определено")+'</span></div><button class="secondary" data-route="reset-password">Сменить пароль</button></div>'+
+      '<div class="setting-line"><div><b>Способы входа</b><span class="muted">'+esc((methods.methods||[]).map(x=>methodLabels[x]||"Другой способ входа").join(", ")||"Не определено")+'</span></div><button class="secondary" data-route="reset-password">Сменить пароль</button></div>'+
       (methods.phone?'<div class="setting-line"><div><b>Телефон</b><span class="muted">'+esc(methods.phone)+'</span></div><span class="tag">'+(methods.phone_verified?"Подтверждён":"Не подтверждён")+'</span></div>':'')+
       '</section>'+
       '<section class="card settings-card"><div class="eyebrow">Данные и документы</div>'+
