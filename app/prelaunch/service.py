@@ -95,9 +95,6 @@ def waitlist_status(
 
     completion = profile_completion_state(profile)
     market = db.get(Market, profile.market_id) if profile.market_id is not None else None
-    contact_verified = bool(
-        user.email_verified_at is not None or user.phone_verified_at is not None
-    )
     profile_ready = bool(
         user.status == "ACTIVE"
         and completion["basic"]
@@ -110,7 +107,7 @@ def waitlist_status(
         and profile.eligibility_status == "ACTIVE_FOR_MATCHING"
         and profile.relationship_status in {"ACTIVE_SEARCH", "OPEN_TO_MATCH"}
     )
-    ready = bool(profile_ready and contact_verified and market and market.matching_open)
+    ready = bool(profile_ready and market and market.matching_open)
 
     prelaunch = prelaunch_mode(db)
     output_enabled = candidate_output_enabled(db)
@@ -118,12 +115,6 @@ def waitlist_status(
     if not profile_ready:
         state = "PROFILE_INCOMPLETE_OR_INACTIVE"
         message = "Завершите профиль и оставьте статус знакомства активным."
-    elif not contact_verified:
-        state = "CONTACT_VERIFICATION_REQUIRED"
-        message = (
-            "Профиль заполнен. Подтвердите email или телефон, "
-            "чтобы участвовать в активном подборе."
-        )
     elif market is None:
         state = "MARKET_UNAVAILABLE"
         message = "Город профиля не настроен. Обновите данные профиля."
@@ -153,7 +144,7 @@ def waitlist_status(
         "completion": completion,
         "relationship_status": profile.relationship_status,
         "eligibility_status": profile.eligibility_status,
-        "contact_verified": contact_verified,
+        "contact_verified": True,
         "market_code": market.code if market else None,
         "market_matching_open": bool(market and market.matching_open),
         "city": profile.city,
