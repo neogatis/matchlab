@@ -1459,31 +1459,6 @@
     return item ? item[0] : null;
   }
 
-  function verificationBanner(){
-    const v=state.onboarding?.verification||state.profile?.verification||{};
-    if(v.contact_verified)return "";
-    if(!v.email)return '<div class="verification-banner"><div><b>Подтвердите контакт</b><span>Для активного подбора нужен подтверждённый email или телефон.</span></div></div>';
-    return '<div class="verification-banner"><div><b>Подтвердите email</b><span>Анкету можно продолжать. Подбор включится после подтверждения email или телефона.</span></div>'+
-      '<button class="secondary" id="verify-email-resend">'+(v.email_delivery_available?"Отправить письмо":"Email пока не настроен")+'</button></div>';
-  }
-
-  function bindVerificationBanner(){
-    const btn=pick("verify-email-resend");
-    if(!btn)return;
-    const v=state.onboarding?.verification||state.profile?.verification||{};
-    if(!v.email_delivery_available){btn.disabled=true;return}
-    btn.onclick=async()=>{
-      btn.disabled=true;btn.textContent="Отправляем…";
-      try{
-        await post("/api/v1/auth/email/verification/request");
-        btn.textContent="Письмо отправлено ✓";
-      }catch(e){
-        btn.disabled=false;btn.textContent="Отправить ещё раз";
-        onboardingStatus("Не удалось отправить письмо: "+friendlyError(e),true);
-      }
-    };
-  }
-
   function onboardingChrome(step, body) {
     const idx=Math.max(0,ONBOARDING_STEPS.findIndex(([key])=>key===step));
     const pct=Math.round((idx/ONBOARDING_STEPS.length)*100);
@@ -1491,7 +1466,6 @@
       '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div>'+
       '<button class="ghost" id="onboarding-exit">Позже</button></header>'+
       '<section class="onboarding-shell">'+
-        verificationBanner()+
         '<div class="onboarding-progress"><div class="progress-copy"><span>Шаг '+(idx+1)+' из '+ONBOARDING_STEPS.length+'</span><b>'+esc(ONBOARDING_STEPS[idx]?.[1]||"Анкета")+'</b></div>'+
         '<div class="progress-track"><i style="width:'+pct+'%"></i></div></div>'+
         body+
@@ -1616,7 +1590,6 @@
     }
 
     root.innerHTML=onboardingChrome(step,body);
-    bindVerificationBanner();
     pick("onboarding-exit").onclick=()=>setRoute("home");
 
     if(step==="basic"){
@@ -1756,11 +1729,10 @@
     const stateLabel=
       waitlist.state==="WAITLIST"?"Вы в листе ожидания":
       waitlist.state==="MATCHING_ACTIVE"?"Подбор уже открыт":
-      waitlist.state==="CONTACT_VERIFICATION_REQUIRED"?"Нужно подтвердить контакт":
       "Профиль готов";
     root.innerHTML='<main class="onboarding-page waitlist-page">'+
       '<header class="onboarding-head"><div class="brand">Match<span>Lab</span></div><button class="ghost" id="waitlist-profile">Профиль</button></header>'+
-      '<section class="onboarding-shell">'+verificationBanner()+'<div class="onboarding-card waitlist-card">'+
+      '<section class="onboarding-shell"><div class="onboarding-card waitlist-card">'+
         '<div class="waitlist-mark">'+(ready?"✓":"♡")+'</div>'+
         '<div class="eyebrow">Анкета завершена</div>'+
         '<h1>'+esc(stateLabel)+(p.display_name?" — "+esc(p.display_name):"")+'</h1>'+
