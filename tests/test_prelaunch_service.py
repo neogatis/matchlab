@@ -104,6 +104,15 @@ class PrelaunchServiceTests(unittest.TestCase):
             self.assertEqual(state["state"],"WAITLIST")
             self.assertFalse(state["features"]["candidate_output_enabled"])
 
+    def test_unverified_email_does_not_block_ready_profile(self):
+        with Session(self.engine) as db:
+            user_id=self.add_ready_user(db,"unverified@example.com")
+            db.get(User,user_id).email_verified_at=None
+            db.commit()
+            state=waitlist_status(db,user_id=user_id)
+            self.assertTrue(state["ready"])
+            self.assertEqual(state["state"],"WAITLIST")
+
     def test_incomplete_profile_does_not_claim_waitlist_ready(self):
         with Session(self.engine) as db:
             user_id=self.add_ready_user(db,"incomplete@example.com")
