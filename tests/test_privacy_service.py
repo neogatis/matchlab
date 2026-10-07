@@ -5,13 +5,18 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.auth.service import create_session
+from app.chat.media import encode_media_body
 from app.db.models import (
     AuditLog,
     AuthIdentity,
+    ChatMediaUploadTicket,
+    Conversation,
     DataRequest,
     Interest,
     Market,
     MarketingAttribution,
+    Match,
+    Message,
     Payment,
     Photo,
     PhotoObjectDeletion,
@@ -230,6 +235,74 @@ class PrivacyServiceTests(unittest.TestCase):
             request = db.get(DataRequest, request_id)
             self.assertEqual(request.status, "COMPLETED")
             self.assertIsNotNone(request.completed_at)
+
+    def test_account_purge_queues_chat_media_objects(self):
+        chat_key = f"users/{self.user_id}/chat/privacy/video.mp4"
+        with Session(self.engine) as db:
+            low, high = sorted((self.user_id, self.other_id))
+            match = Match(
+                user1=low,
+                user2=high,
+                compatibility_score=80,
+                mutual_fit_score=78,
+                algorithm_version="test",
+                created_at=self.now,
+            )
+            db.add(match)
+            db.flush()
+            conversation = Conversation(match_id=match.id, created_at=self.now)
+            db.add(conversation)
+            db.flush()
+            body = encode_media_body({
+                "kind": "video",
+                "mime": "video/mp4",
+                "object_key": chat_key,
+                "name": "video.mp4",
+                "size": 1024,
+            })
+            db.add(Message(
+                conversation_id=conversation.id,
+                sender=self.user_id,
+                body=body,
+                created_at=self.now,
+            ))
+            db.add(ChatMediaUploadTicket(
+                user_id=self.user_id,
+                conversation_id=conversation.id,
+                object_key=chat_key,
+                mime="video/mp4",
+                kind="video",
+                original_name="video.mp4",
+                expected_size=1024,
+                status="CONSUMED",
+                expires_at=self.now + timedelta(minutes=15),
+                consumed_at=self.now,
+                created_at=self.now,
+            ))
+            db.commit()
+
+        with Session(self.engine) as db:
+            request_account_deletion(db, user_id=self.user_id, now=self.now)
+            db.commit()
+
+        with Session(self.engine) as db:
+            process_due_deletions(
+                db,
+                now=self.now + timedelta(days=DELETION_GRACE_DAYS, minutes=1),
+            )
+            db.commit()
+            keys = {
+                row.object_key
+                for row in db.query(PhotoObjectDeletion).all()
+            }
+            self.assertIn(f"users/{self.user_id}/photo.jpg", keys)
+            self.assertIn(chat_key, keys)
+            self.assertEqual(
+                db.query(ChatMediaUploadTicket)
+                .filter(ChatMediaUploadTicket.user_id == self.user_id)
+                .count(),
+                0,
+            )
 
     def test_retention_cleanup_removes_expired_operational_records(self):
         old = self.now - timedelta(days=400)
