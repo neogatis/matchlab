@@ -82,9 +82,18 @@ class PhotoServiceTests(unittest.TestCase):
             db.commit()
             self.user_id=user.id
 
-    def prepare_and_upload(self, db, *, mime="image/jpeg", size=100_000, etag="etag"):
+    def prepare_and_upload(
+        self,
+        db,
+        *,
+        mime="image/jpeg",
+        size=100_000,
+        etag="etag",
+        purpose=photos.PHOTO_PURPOSE_PROFILE,
+    ):
         prepared=photos.prepare_upload(
-            db,user_id=self.user_id,mime=mime,storage=self.storage,now=self.now
+            db,user_id=self.user_id,mime=mime,storage=self.storage,now=self.now,
+            purpose=purpose,
         )
         self.storage.objects[prepared["object_key"]]=ObjectMetadata(
             content_length=size,content_type=mime,etag=etag
@@ -92,6 +101,7 @@ class PhotoServiceTests(unittest.TestCase):
         photo=photos.finalize_upload(
             db,user_id=self.user_id,ticket_token=prepared["ticket"],
             storage=self.storage,now=self.now + timedelta(seconds=1),
+            expected_purpose=purpose,
         )
         return photo,prepared
 
@@ -110,6 +120,7 @@ class PhotoServiceTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertNotEqual(row.secret_hash,secret)
             self.assertEqual(row.status,"PREPARED")
+            self.assertEqual(row.purpose,photos.PHOTO_PURPOSE_PROFILE)
 
     def test_unsupported_mime_is_rejected(self):
         with Session(self.engine) as db:
@@ -132,7 +143,7 @@ class PhotoServiceTests(unittest.TestCase):
             ticket=db.get(PhotoUploadTicket,ticket_id)
             self.assertEqual(ticket.status,"CONSUMED")
             self.assertIsNotNone(ticket.consumed_at)
-            self.assertFalse(db.get(Profile,self.user_id).photos_completed)
+            self.assertTrue(db.get(Profile,self.user_id).photos_completed)
 
     def test_expired_ticket_is_rejected(self):
         with Session(self.engine) as db:
@@ -189,22 +200,19 @@ class PhotoServiceTests(unittest.TestCase):
             self.assertIn(str(p1.storage_key),payloads[0]["url"])
             self.assertNotIn(str(p2.storage_key),payloads[0]["url"])
 
-    def test_two_approved_photos_complete_photo_step_and_have_main(self):
+    def test_one_approved_photo_completes_photo_step_and_has_main(self):
         with Session(self.engine) as db:
             p1,_=self.prepare_and_upload(db,etag="1")
-            p2,_=self.prepare_and_upload(db,etag="2")
             photos.moderate_photo(db,photo_id=p1.id,status="APPROVED",actor="moderator")
-            self.assertFalse(db.get(Profile,self.user_id).photos_completed)
-            photos.moderate_photo(db,photo_id=p2.id,status="APPROVED",actor="moderator")
             db.commit()
 
             profile=db.get(Profile,self.user_id)
             self.assertTrue(profile.photos_completed)
             visible=photos.visible_photos(db,user_id=self.user_id)
-            self.assertEqual(len(visible),2)
-            self.assertTrue(any(p.is_main for p in visible))
+            self.assertEqual(len(visible),1)
+            self.assertTrue(visible[0].is_main)
             self.assertEqual(
-                db.query(ModerationAction).filter_by(target_type="photo").count(),2
+                db.query(ModerationAction).filter_by(target_type="photo").count(),1
             )
 
     def test_rejected_main_is_never_public_and_main_moves_to_approved_photo(self):
@@ -272,6 +280,76 @@ class PhotoServiceTests(unittest.TestCase):
             self.assertIn(key,self.storage.deleted)
             self.assertEqual(queued.status,"DONE")
 
+    def test_identity_selfie_is_private_does_not_count_as_profile_photo_and_sets_verified(self):
+        with Session(self.engine) as db:
+            selfie,prepared=self.prepare_and_upload(
+                db,
+                etag="identity",
+                purpose=photos.PHOTO_PURPOSE_IDENTITY,
+            )
+            db.commit()
+
+            self.assertEqual(selfie.purpose,photos.PHOTO_PURPOSE_IDENTITY)
+            self.assertFalse(selfie.is_main)
+            self.assertEqual(
+                photos.list_owner_photos(db,user_id=self.user_id),
+                [],
+            )
+            self.assertEqual(
+                photos.visible_photos(db,user_id=self.user_id),
+                [],
+            )
+            progress=photos.photo_progress(db,user_id=self.user_id)
+            self.assertEqual(progress["total"],0)
+            self.assertFalse(progress["complete"])
+            profile=db.get(Profile,self.user_id)
+            self.assertEqual(profile.identity_verification_status,"PENDING")
+
+            key=selfie.storage_key
+            photos.moderate_photo(
+                db,
+                photo_id=selfie.id,
+                status="APPROVED",
+                actor="moderator",
+            )
+            db.commit()
+
+            profile=db.get(Profile,self.user_id)
+            self.assertEqual(profile.identity_verification_status,"VERIFIED")
+            self.assertIsNotNone(profile.identity_verified_at)
+            self.assertIsNone(selfie.storage_key)
+            queued=db.query(PhotoObjectDeletion).filter_by(object_key=key).one()
+            self.assertEqual(queued.status,"PENDING")
+            status=photos.identity_verification_status(db,user_id=self.user_id)
+            self.assertTrue(status["verified"])
+
+    def test_rejected_identity_selfie_can_be_resubmitted(self):
+        with Session(self.engine) as db:
+            selfie,_=self.prepare_and_upload(
+                db,
+                etag="identity-reject",
+                purpose=photos.PHOTO_PURPOSE_IDENTITY,
+            )
+            photos.moderate_photo(
+                db,
+                photo_id=selfie.id,
+                status="REJECTED",
+                actor="moderator",
+                reason="face mismatch",
+            )
+            db.commit()
+            profile=db.get(Profile,self.user_id)
+            self.assertEqual(profile.identity_verification_status,"REJECTED")
+            prepared=photos.prepare_upload(
+                db,
+                user_id=self.user_id,
+                mime="image/jpeg",
+                storage=self.storage,
+                now=self.now+timedelta(minutes=1),
+                purpose=photos.PHOTO_PURPOSE_IDENTITY,
+            )
+            self.assertEqual(prepared["purpose"],photos.PHOTO_PURPOSE_IDENTITY)
+
     def test_database_rejects_invalid_photo_metadata(self):
         with Session(self.engine) as db:
             db.add(Photo(
@@ -289,7 +367,7 @@ class PhotoServiceTests(unittest.TestCase):
     def test_photo_progress_reports_minimum_and_recommendation(self):
         with Session(self.engine) as db:
             progress=photos.photo_progress(db,user_id=self.user_id)
-            self.assertEqual(progress["minimum"],2)
+            self.assertEqual(progress["minimum"],1)
             self.assertEqual(progress["recommended_min"],3)
             self.assertEqual(progress["recommended_max"],5)
             self.assertEqual(progress["maximum"],5)
