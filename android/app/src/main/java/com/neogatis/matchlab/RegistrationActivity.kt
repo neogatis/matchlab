@@ -286,7 +286,7 @@ class RegistrationActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onRegistered(userId)
                 }.onFailure {
-                    showStatus("Ошибка регистрации: " + it.message)
+                    showStatus("Не удалось завершить регистрацию. Проверьте данные и попробуйте ещё раз.")
                 }
             }
         }
