@@ -1392,10 +1392,26 @@
             lifestyle:valueOrIgnore("lifestyle","pref-lifestyle",v=>[v]),
             height:heightConfig
           };
+          const saveButton=pick("ob-save-preferences");
+          saveButton.disabled=true;
+          saveButton.textContent="Сохраняем…";
           onboardingStatus("Сохраняем критерии…");
-          await post("/api/v1/preferences",{preferences:prefs});
-          await loadMe(); renderOnboarding();
-        }catch(e){onboardingStatus(e.message||"Проверьте критерии",true)}
+          const result=await post("/api/v1/preferences",{preferences:prefs});
+          onboardingStatus("Критерии сохранены ✓");
+          saveButton.textContent="Сохранено ✓";
+          if(result?.complete && state.onboarding?.completion){
+            state.onboarding.completion.partner_preferences=true;
+            renderOnboarding();
+            loadMe().catch(()=>{});
+          }else{
+            saveButton.disabled=false;
+            saveButton.textContent="Сохранить критерии →";
+          }
+        }catch(e){
+          const saveButton=pick("ob-save-preferences");
+          if(saveButton){saveButton.disabled=false;saveButton.textContent="Сохранить критерии →";}
+          onboardingStatus(e.message||"Проверьте критерии",true)
+        }
       };
     } else {
       pick("ob-finish-later").onclick=()=>setRoute("home");
@@ -1728,12 +1744,22 @@
           lifestyle:simple("lifestyle","pref-edit-lifestyle"),
           height:range("height","pref-edit-height-min","pref-edit-height-max",100,250)
         };
-        button.disabled=true;inlineStatus("preferences-status","Сохраняем…");
+        button.disabled=true;
+        button.textContent="Сохраняем…";
+        inlineStatus("preferences-status","Сохраняем…");
         await post("/api/v1/preferences",{preferences:prefs});
-        await loadMe();
+        button.textContent="Сохранено ✓";
         inlineStatus("preferences-status","Критерии сохранены ✓");
-      }catch(e){inlineStatus("preferences-status",e.message||"Не удалось сохранить критерии",true)}
-      finally{button.disabled=false}
+        loadMe().catch(()=>{});
+        setTimeout(()=>{
+          button.disabled=false;
+          button.textContent="Сохранить критерии";
+        },700);
+      }catch(e){
+        inlineStatus("preferences-status",e.message||"Не удалось сохранить критерии",true);
+        button.disabled=false;
+        button.textContent="Сохранить критерии";
+      }
     };
   }
 
