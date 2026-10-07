@@ -378,7 +378,7 @@ class MainActivity : AppCompatActivity() {
                     verifyButton.visibility = View.VISIBLE
                     codeInput.requestFocus()
                 }.onFailure {
-                    showStatus("Ошибка отправки: " + it.message)
+                    showStatus("Не удалось отправить код. Проверьте номер и попробуйте ещё раз.")
                 }
             }
         }
@@ -402,7 +402,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "телефон")
                 }.onFailure {
-                    showStatus("Ошибка входа: " + it.message)
+                    showStatus("Не удалось войти. Проверьте код и попробуйте ещё раз.")
                 }
             }
         }
@@ -431,8 +431,8 @@ class MainActivity : AppCompatActivity() {
                 .isGooglePlayServicesAvailable(this)
             if (playServices != ConnectionResult.SUCCESS) {
                 showStatus(
-                    "Google Play Services недоступны в этом Android-окружении. " +
-                        "Вход по телефону работает."
+                    "Вход через Google сейчас недоступен. " +
+                        "Войдите по номеру телефона или попробуйте позже."
                 )
                 return@setOnClickListener
             }
@@ -446,7 +446,7 @@ class MainActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onAuthenticated(userId, "Google")
                 }.onFailure {
-                    showStatus("Ошибка Google Sign-In: " + it.message)
+                    showStatus("Не удалось войти через Google. Попробуйте ещё раз или войдите по номеру телефона.")
                 }
             }
         }
