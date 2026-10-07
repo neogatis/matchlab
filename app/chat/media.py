@@ -56,6 +56,40 @@ def _spec(mime: str, requested_kind: str | None = None) -> tuple[str, str, int]:
     return kind, extension, max_bytes
 
 
+def _looks_like_mp4_family(raw: bytes) -> bool:
+    return len(raw) >= 12 and raw[4:8] == b"ftyp"
+
+
+def validate_media_signature(*, storage: S3PhotoStorage, object_key: str, mime: str) -> None:
+    normalized = normalize_mime(mime)
+    if normalized.startswith("image/"):
+        return
+    try:
+        raw = storage.get_prefix(object_key, max_bytes=4096)
+    except Exception as exc:
+        raise ChatMediaError("chat_media_signature_unavailable") from exc
+    if not raw:
+        raise ChatMediaError("invalid_chat_media_content")
+
+    ok = False
+    if normalized in {"video/mp4", "video/quicktime", "audio/mp4"}:
+        ok = _looks_like_mp4_family(raw)
+    elif normalized == "video/webm":
+        ok = raw.startswith(b"\x1a\x45\xdf\xa3")
+    elif normalized == "audio/ogg":
+        ok = raw.startswith(b"OggS")
+    elif normalized == "audio/webm":
+        ok = raw.startswith(b"\x1a\x45\xdf\xa3")
+    elif normalized == "audio/mpeg":
+        ok = raw.startswith(b"ID3") or (
+            len(raw) >= 2
+            and raw[0] == 0xFF
+            and (raw[1] & 0xE0) == 0xE0
+        )
+    if not ok:
+        raise ChatMediaError("invalid_chat_media_content")
+
+
 def prepare_object_upload(
     *,
     storage: S3PhotoStorage,
@@ -149,6 +183,18 @@ def validate_uploaded_media(
                 raise ChatMediaError(str(exc)) from exc
         except Exception as exc:
             raise ChatMediaError("chat_image_sanitize_failed") from exc
+    else:
+        try:
+            validate_media_signature(
+                storage=storage,
+                object_key=object_key,
+                mime=mime,
+            )
+        except ChatMediaError:
+            try:
+                storage.delete(object_key)
+            finally:
+                raise
 
     fallback = (
         "Голосовое сообщение"
