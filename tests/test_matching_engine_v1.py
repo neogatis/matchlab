@@ -182,6 +182,16 @@ class MatchingEngineTests(unittest.TestCase):
             result=matching.evaluate_pair(db,a,b,now=self.now)
             self.assertTrue(result["eligible"],result)
 
+    def test_unverified_email_candidate_is_still_ranked(self):
+        with Session(self.engine) as db:
+            source=self.add_user(db,email="source@example.com",seek_gender="ANY")
+            candidate=self.add_user(db,email="candidate@example.com",seek_gender="ANY")
+            db.get(User,source).email_verified_at=None
+            db.get(User,candidate).email_verified_at=None
+            db.commit()
+            ranked=matching.rank_candidates(db,user_id=source,limit=5,now=self.now)
+            self.assertIn(candidate,[row["user_id"] for row in ranked])
+
     def test_configured_gender_ignore_overrides_legacy_seek_gender_filter(self):
         with Session(self.engine) as db:
             a=self.add_user(db,email="a@example.com",gender="M",seek_gender="F")
