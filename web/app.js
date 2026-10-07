@@ -1745,7 +1745,6 @@
         '<button class="primary full" id="waitlist-home">Перейти в приложение →</button>'+
         '<button class="secondary full" id="waitlist-edit">Изменить профиль</button>'+
       '</div></section></main>';
-    bindVerificationBanner();
     document.getElementById("waitlist-home").onclick=()=>setRoute("home");
     document.getElementById("waitlist-edit").onclick=()=>setRoute("profile");
     document.getElementById("waitlist-profile").onclick=()=>setRoute("profile");
@@ -1777,7 +1776,6 @@
       '<button type="button" class="primary full questionnaire-continue" id="questionnaire-continue" disabled>Сначала выберите ответ</button>'+
       '<button type="button" class="ghost full" id="questionnaire-later">Продолжить позже</button>'+
       '</div>');
-    bindVerificationBanner();
     pick("onboarding-exit").onclick=()=>setRoute("home");
     pick("questionnaire-later").onclick=()=>setRoute("home");
     let selectedAnswer = null;
@@ -2339,11 +2337,11 @@
     try{
       await post("/api/v1/auth/email/verify",{email,challenge});
       title.textContent="Email подтверждён ✓";
-      copy.textContent="Теперь подтверждение не будет мешать активному подбору.";
+      copy.textContent="Готово. Можно вернуться в MatchLab.";
       btn.hidden=false;btn.onclick=async()=>{await loadMe();setRoute("home")};
     }catch(e){
       title.textContent="Ссылка истекла или уже использована";
-      copy.textContent="Откройте MatchLab и запросите новое письмо подтверждения.";
+      copy.textContent="Эта ссылка больше не нужна для использования MatchLab.";
       btn.hidden=false;btn.textContent="Открыть MatchLab";btn.onclick=()=>setRoute("home");
     }
   }
