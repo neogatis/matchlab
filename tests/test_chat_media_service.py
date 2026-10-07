@@ -57,7 +57,9 @@ class ChatMediaServiceTests(unittest.TestCase):
 
     def setUp(self):
         with self.engine.begin() as connection:
-            connection.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
+            connection.execute(text(
+                "TRUNCATE TABLE photo_object_deletions, users RESTART IDENTITY CASCADE"
+            ))
         self.now = datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)
         self.storage = FakeStorage()
 
@@ -218,7 +220,11 @@ class ChatMediaServiceTests(unittest.TestCase):
 
             ticket = db.query(ChatMediaUploadTicket).one()
             self.assertEqual(ticket.status, "CANCELLED")
-            deletion = db.query(PhotoObjectDeletion).one()
+            deletion = (
+                db.query(PhotoObjectDeletion)
+                .filter(PhotoObjectDeletion.object_key == prepared["object_key"])
+                .one()
+            )
             self.assertEqual(deletion.object_key, prepared["object_key"])
             self.assertIn(prepared["object_key"], self.storage.deleted)
             self.assertEqual(db.query(Message).count(), 0)
