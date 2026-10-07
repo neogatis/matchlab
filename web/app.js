@@ -11,6 +11,9 @@
     currentCandidate: null,
     currentConversation: null,
     poller: null,
+    voiceRecorder: null,
+    voiceTimer: null,
+    mediaSending: false,
   };
 
   function safeStorage(storage,key,value){
@@ -132,6 +135,17 @@
   function clearPoller() {
     if (state.poller) clearInterval(state.poller);
     state.poller = null;
+    if (state.voiceTimer) clearInterval(state.voiceTimer);
+    state.voiceTimer = null;
+    if (state.voiceRecorder) {
+      const session=state.voiceRecorder;
+      session.cancelled=true;
+      try {
+        if(session.recorder&&session.recorder.state!=="inactive") session.recorder.stop();
+      } catch {}
+      try { session.stream?.getTracks()?.forEach(track=>track.stop()); } catch {}
+      state.voiceRecorder=null;
+    }
   }
 
   function navIcon(key){
@@ -947,12 +961,70 @@
     });
   }
 
+  function formatBytes(value){
+    const bytes=Number(value||0);
+    if(!bytes)return "";
+    if(bytes<1024)return bytes+" Б";
+    if(bytes<1024*1024)return (bytes/1024).toFixed(bytes<10*1024?1:0)+" КБ";
+    return (bytes/(1024*1024)).toFixed(bytes<10*1024*1024?1:0)+" МБ";
+  }
+
+  function formatDuration(value){
+    const total=Math.max(0,Math.round(Number(value||0)));
+    const min=Math.floor(total/60);
+    const sec=String(total%60).padStart(2,"0");
+    return min+":"+sec;
+  }
+
+  function chatMediaHtml(media){
+    if(!media||!media.url)return "";
+    const url=esc(media.url);
+    const kind=String(media.kind||"");
+    if(kind==="image"){
+      return '<a class="chat-media chat-media-image" href="'+url+'" target="_blank" rel="noopener">'+
+        '<img src="'+url+'" loading="lazy" alt="Фото в чате"></a>';
+    }
+    if(kind==="video"){
+      return '<div class="chat-media chat-media-video"><video controls playsinline preload="metadata" src="'+url+'"></video>'+
+        '<small>'+esc(formatBytes(media.size))+'</small></div>';
+    }
+    if(kind==="voice"){
+      return '<div class="chat-media chat-media-voice">'+
+        '<span class="voice-message-icon" aria-hidden="true">🎙</span>'+
+        '<audio controls preload="metadata" src="'+url+'"></audio>'+
+        '<span class="voice-message-duration">'+esc(formatDuration(media.duration_seconds))+'</span>'+
+      '</div>';
+    }
+    return "";
+  }
+
   function bubbleHtml(m,extraClass=""){
     const time=(m.created_at||"").slice(11,16);
-    return '<div class="bubble '+(m.is_mine?"mine":"theirs")+(extraClass?" "+extraClass:"")+'" '+(m.client_message_id?'data-client-message="'+esc(m.client_message_id)+'"':'')+'>'+
-      '<div class="bubble-body">'+esc(m.body)+'</div>'+
+    const media=chatMediaHtml(m.media);
+    const text=String(m.body||"").trim();
+    return '<div class="bubble '+(m.is_mine?"mine":"theirs")+(m.media?" has-media":"")+(extraClass?" "+extraClass:"")+'" '+(m.client_message_id?'data-client-message="'+esc(m.client_message_id)+'"':'')+'>'+
+      media+
+      (text?'<div class="bubble-body">'+esc(text)+'</div>':'')+
       '<span class="bubble-time">'+esc(time)+(extraClass.includes("pending")?" · отправляем…":"")+'</span>'+
     '</div>';
+  }
+
+  function chatStatus(message="",error=false,recording=false){
+    const el=document.getElementById("chat-upload-status");
+    if(!el)return;
+    el.hidden=!message;
+    el.className="chat-upload-status"+(error?" error":"")+(recording?" recording":"");
+    el.textContent=message;
+  }
+
+  function setComposerBusy(busy){
+    state.mediaSending=!!busy;
+    const attach=document.getElementById("chat-media-input");
+    const mic=document.getElementById("voice-record");
+    const send=document.getElementById("send-message");
+    if(attach)attach.disabled=!!busy;
+    if(mic)mic.disabled=!!busy;
+    if(send)send.disabled=!!busy;
   }
 
   async function renderChat() {
@@ -969,7 +1041,19 @@
       '<div class="chat-context">💜 Взаимный интерес · можно общаться в своём темпе</div>'+
       '<div id="messages" class="messages"><div class="loader"></div></div>'+
     '</main>'+
-    '<div class="composer"><textarea id="message-input" rows="1" maxlength="4000" placeholder="Напишите сообщение…"></textarea><button class="send" id="send-message" aria-label="Отправить">➤</button></div>'+
+    '<div class="composer">'+
+      '<div id="chat-upload-status" class="chat-upload-status" hidden></div>'+
+      '<div class="composer-row">'+
+        '<label class="composer-action attach-action" title="Отправить фото или видео" aria-label="Отправить фото или видео">'+
+          '<input id="chat-media-input" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime">'+
+          '<span aria-hidden="true">＋</span>'+
+        '</label>'+
+        '<textarea id="message-input" rows="1" maxlength="4000" placeholder="Напишите сообщение…"></textarea>'+
+        '<button class="composer-action mic-action" id="voice-record" type="button" aria-label="Записать голосовое">🎙</button>'+
+        '<button class="voice-cancel" id="voice-cancel" type="button" hidden>Отмена</button>'+
+        '<button class="send" id="send-message" aria-label="Отправить">➤</button>'+
+      '</div>'+
+    '</div>'+
     nav("chats");
     bindCommon();
     document.getElementById("chat-back").onclick=()=>setRoute("chats");
@@ -990,8 +1074,22 @@
       input.style.height="auto";
       input.style.height=Math.min(120,input.scrollHeight)+"px";
     });
+    const mediaInput=document.getElementById("chat-media-input");
+    if(mediaInput)mediaInput.onchange=async e=>{
+      const file=e.target.files?.[0];
+      e.target.value="";
+      if(!file)return;
+      const mime=String(file.type||"").split(";",1)[0].toLowerCase();
+      const kind=mime.startsWith("image/")?"image":mime.startsWith("video/")?"video":"";
+      if(!kind)return chatStatus("Поддерживаются JPG, PNG, WEBP, MP4, WEBM и MOV.",true);
+      await sendChatMedia(file,kind);
+    };
+    const voice=document.getElementById("voice-record");
+    if(voice)voice.onclick=toggleVoiceRecording;
+    const cancel=document.getElementById("voice-cancel");
+    if(cancel)cancel.onclick=()=>stopVoiceRecording(true);
     await loadMessages();
-    state.poller=setInterval(()=>loadMessages(false),4000);
+    state.poller=setInterval(()=>loadMessages(false),2500);
   }
 
   async function loadMessages(forceScroll=true) {
@@ -1013,6 +1111,181 @@
       }
       if(forceScroll||nearBottom)box.scrollTop=box.scrollHeight;
     }catch(e){}
+  }
+
+  function preferredVoiceMime(){
+    if(typeof MediaRecorder==="undefined")return "";
+    const choices=[
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+      "audio/ogg"
+    ];
+    if(typeof MediaRecorder.isTypeSupported!=="function")return "";
+    return choices.find(type=>MediaRecorder.isTypeSupported(type))||"";
+  }
+
+  function updateVoiceUi(){
+    const session=state.voiceRecorder;
+    const mic=document.getElementById("voice-record");
+    const cancel=document.getElementById("voice-cancel");
+    const input=document.getElementById("message-input");
+    const attach=document.getElementById("chat-media-input");
+    const send=document.getElementById("send-message");
+    const composer=document.querySelector(".composer");
+    if(!session){
+      if(mic){mic.textContent="🎙";mic.setAttribute("aria-label","Записать голосовое")}
+      if(cancel)cancel.hidden=true;
+      if(input)input.disabled=false;
+      if(attach)attach.disabled=state.mediaSending;
+      if(send)send.disabled=state.mediaSending;
+      composer?.classList.remove("recording");
+      return;
+    }
+    const elapsed=(Date.now()-session.startedAt)/1000;
+    if(mic){mic.textContent="■";mic.setAttribute("aria-label","Остановить и отправить голосовое")}
+    if(cancel)cancel.hidden=false;
+    if(input)input.disabled=true;
+    if(attach)attach.disabled=true;
+    if(send)send.disabled=true;
+    composer?.classList.add("recording");
+    chatStatus("● Запись "+formatDuration(elapsed)+" · нажмите ■, чтобы отправить",false,true);
+  }
+
+  async function toggleVoiceRecording(){
+    if(state.mediaSending)return;
+    if(state.voiceRecorder){
+      stopVoiceRecording(false);
+      return;
+    }
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==="undefined"){
+      chatStatus("Запись голосовых не поддерживается этим браузером.",true);
+      return;
+    }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({
+        audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+      });
+      const preferred=preferredVoiceMime();
+      const recorder=preferred?new MediaRecorder(stream,{mimeType:preferred}):new MediaRecorder(stream);
+      const session={
+        recorder,
+        stream,
+        chunks:[],
+        startedAt:Date.now(),
+        cancelled:false
+      };
+      state.voiceRecorder=session;
+      recorder.ondataavailable=e=>{if(e.data&&e.data.size)session.chunks.push(e.data)};
+      recorder.onerror=()=>{
+        session.cancelled=true;
+        chatStatus("Не удалось записать голосовое.",true);
+      };
+      recorder.onstop=async()=>{
+        try{session.stream.getTracks().forEach(track=>track.stop())}catch{}
+        if(state.voiceTimer)clearInterval(state.voiceTimer);
+        state.voiceTimer=null;
+        if(state.voiceRecorder===session)state.voiceRecorder=null;
+        updateVoiceUi();
+        if(session.cancelled)return chatStatus("");
+        const duration=Math.max(.1,(Date.now()-session.startedAt)/1000);
+        if(!session.chunks.length)return chatStatus("Голосовое получилось пустым. Попробуйте ещё раз.",true);
+        let mime=String(recorder.mimeType||session.chunks[0]?.type||"audio/webm").split(";",1)[0].toLowerCase();
+        if(!["audio/webm","audio/ogg","audio/mp4","audio/mpeg"].includes(mime)){
+          mime="audio/webm";
+        }
+        const blob=new Blob(session.chunks,{type:mime});
+        const ext=mime==="audio/mp4"?".m4a":mime==="audio/ogg"?".ogg":mime==="audio/mpeg"?".mp3":".webm";
+        const file=new File([blob],"voice-"+Date.now()+ext,{type:mime});
+        await sendChatMedia(file,"voice",duration);
+      };
+      recorder.start(250);
+      updateVoiceUi();
+      state.voiceTimer=setInterval(()=>{
+        if(!state.voiceRecorder||state.voiceRecorder!==session)return;
+        const elapsed=(Date.now()-session.startedAt)/1000;
+        if(elapsed>=300){
+          stopVoiceRecording(false);
+          return;
+        }
+        updateVoiceUi();
+      },500);
+    }catch(err){
+      chatStatus(err?.name==="NotAllowedError"
+        ?"Разрешите доступ к микрофону, чтобы отправлять голосовые."
+        :"Не удалось включить микрофон.",true);
+    }
+  }
+
+  function stopVoiceRecording(cancelled=false){
+    const session=state.voiceRecorder;
+    if(!session)return;
+    session.cancelled=!!cancelled;
+    if(state.voiceTimer)clearInterval(state.voiceTimer);
+    state.voiceTimer=null;
+    try{
+      if(session.recorder.state!=="inactive")session.recorder.stop();
+    }catch{
+      try{session.stream.getTracks().forEach(track=>track.stop())}catch{}
+      state.voiceRecorder=null;
+      updateVoiceUi();
+      if(cancelled)chatStatus("");
+    }
+  }
+
+  async function sendChatMedia(file,kind,durationSeconds=null){
+    const conv=state.currentConversation;
+    if(!conv||!file||state.mediaSending)return;
+    const mime=String(file.type||"").split(";",1)[0].toLowerCase();
+    const imageLimit=12*1024*1024;
+    const voiceLimit=25*1024*1024;
+    const videoLimit=60*1024*1024;
+    const limit=kind==="image"?imageLimit:kind==="voice"?voiceLimit:videoLimit;
+    if(!mime||file.size<=0)return chatStatus("Не удалось прочитать файл.",true);
+    if(file.size>limit){
+      const label=kind==="image"?"12 МБ":kind==="voice"?"25 МБ":"60 МБ";
+      return chatStatus("Файл слишком большой. Максимум "+label+".",true);
+    }
+    const input=document.getElementById("message-input");
+    const caption=String(input?.value||"").trim();
+    if(input){input.value="";input.style.height="auto"}
+    setComposerBusy(true);
+    chatStatus(kind==="voice"?"Отправляем голосовое…":kind==="video"?"Загружаем видео…":"Загружаем фото…");
+    const clientId=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random());
+    try{
+      const prep=await post("/api/v1/chat/media/prepare",{
+        conversation_id:conv.conversation_id,
+        mime,
+        kind,
+        size:file.size,
+        name:file.name||""
+      });
+      const headers=prep.upload?.headers||{"Content-Type":prep.mime||mime};
+      const uploaded=await fetch(prep.upload.url,{method:"PUT",headers,body:file});
+      if(!uploaded.ok)throw new Error("upload_failed");
+      await post("/api/v1/chat/messages",{
+        conversation_id:conv.conversation_id,
+        body:caption,
+        client_message_id:clientId,
+        media:{
+          object_key:prep.object_key,
+          kind:prep.kind||kind,
+          mime:prep.mime||mime,
+          name:prep.name||file.name||"",
+          size:file.size,
+          duration_seconds:durationSeconds
+        }
+      });
+      chatStatus("");
+      await loadMessages(true);
+    }catch(err){
+      if(input&&caption&&!input.value)input.value=caption;
+      chatStatus("Не удалось отправить вложение. Попробуйте ещё раз.",true);
+    }finally{
+      setComposerBusy(false);
+      updateVoiceUi();
+    }
   }
 
   async function sendCurrentMessage(){
