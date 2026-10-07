@@ -230,6 +230,9 @@ def finalize_upload(
         ticket_token=ticket_token,
         now=now,
     )
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        raise PhotoError("Profile not found")
 
     if ticket.purpose != expected_purpose:
         raise UploadTicketError("Upload ticket purpose mismatch")
