@@ -71,7 +71,7 @@ class OnboardingActivity : AppCompatActivity() {
                 setStatus("Фото загружено и отправлено на модерацию.")
                 loadState()
             }.onFailure { error ->
-                setStatus("Ошибка фото: " + error.message)
+                setStatus("Не удалось загрузить фото. Проверьте интернет и попробуйте ещё раз.")
             }
         }
     }
@@ -111,7 +111,7 @@ class OnboardingActivity : AppCompatActivity() {
                     renderNextStep(state)
                 }
                 .onFailure { error ->
-                    renderError("Не удалось загрузить профиль: " + error.message)
+                    renderError("Не удалось загрузить профиль. Проверьте интернет и попробуйте ещё раз.")
                 }
         }
     }
@@ -279,7 +279,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onSuccess {
                     loadState()
                 }.onFailure { error ->
-                    setStatus("Проверьте данные: " + error.message)
+                    setStatus("Не удалось сохранить данные. Проверьте заполненные поля и попробуйте ещё раз.")
                 }
             }
         }
@@ -320,7 +320,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onSuccess {
                     loadState()
                 }.onFailure { error ->
-                    setStatus("Ошибка: " + error.message)
+                    setStatus("Не удалось сохранить изменения. Попробуйте ещё раз.")
                 }
             }
         }
@@ -361,7 +361,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onSuccess {
                     loadState()
                 }.onFailure { error ->
-                    setStatus("Ошибка: " + error.message)
+                    setStatus("Не удалось сохранить изменения. Попробуйте ещё раз.")
                 }
             }
         }
@@ -471,7 +471,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onSuccess {
                     loadState()
                 }.onFailure { error ->
-                    setStatus("Ошибка: " + error.message)
+                    setStatus("Не удалось сохранить изменения. Попробуйте ещё раз.")
                 }
             }
         }
@@ -488,7 +488,7 @@ class OnboardingActivity : AppCompatActivity() {
             }.onSuccess { payload ->
                 ingestQuestionnaireState(payload)
             }.onFailure { error ->
-                renderError("Не удалось загрузить анкету: " + error.message)
+                renderError("Не удалось загрузить анкету. Проверьте интернет и попробуйте ещё раз.")
             }
         }
     }
@@ -693,8 +693,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onFailure { error ->
                     questionnaireAnsweredLocally.remove(token)
                     setStatus(
-                        "Не удалось сохранить ответ. Проверьте интернет и попробуйте ещё раз: " +
-                            error.message
+                        "Не удалось сохранить ответ. Проверьте интернет и попробуйте ещё раз."
                     )
                     lifecycleScope.launch {
                         runCatching {
@@ -898,7 +897,7 @@ class OnboardingActivity : AppCompatActivity() {
                 }.onSuccess {
                     loadState()
                 }.onFailure { error ->
-                    setStatus("Проверьте критерии: " + error.message)
+                    setStatus("Не удалось сохранить критерии. Проверьте данные и попробуйте ещё раз.")
                 }
             }
         }
@@ -912,7 +911,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         reset(
             "Фото профиля",
-            "Нужно минимум 2 одобренных фото. Рекомендуем 3–5."
+            "Нужно минимум одно одобренное фото. Дополнительные фото помогут лучше представить ваш профиль."
         )
         addText(
             "Одобрено: " + approved.toString() +
@@ -966,7 +965,7 @@ class OnboardingActivity : AppCompatActivity() {
                         )
                     }
                     .onFailure { error ->
-                        setStatus("Пока недоступно: " + error.message)
+                        setStatus("Сейчас этот раздел временно недоступен. Попробуйте немного позже.")
                     }
             }
         }

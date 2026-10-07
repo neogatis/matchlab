@@ -266,7 +266,7 @@ class RegistrationActivity : AppCompatActivity() {
                     finishPhone.visibility = View.VISIBLE
                     code.requestFocus()
                 }.onFailure {
-                    showStatus("Не удалось отправить код: " + it.message)
+                    showStatus("Не удалось отправить код. Проверьте номер и попробуйте ещё раз.")
                 }
             }
         }
@@ -286,7 +286,7 @@ class RegistrationActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onRegistered(userId)
                 }.onFailure {
-                    showStatus("Ошибка регистрации: " + it.message)
+                    showStatus("Не удалось завершить регистрацию. Проверьте данные и попробуйте ещё раз.")
                 }
             }
         }
@@ -309,7 +309,7 @@ class RegistrationActivity : AppCompatActivity() {
                 }.onSuccess { userId ->
                     onRegistered(userId)
                 }.onFailure {
-                    showStatus("Ошибка регистрации: " + it.message)
+                    showStatus("Не удалось завершить регистрацию. Проверьте данные и попробуйте ещё раз.")
                 }
             }
         }

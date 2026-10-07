@@ -1212,3 +1212,54 @@ html,body{
     max-width:86%!important;
   }
 }
+
+
+/* Notifications polish v25 */
+.notifications-friendly{
+  max-width:760px;
+  margin:18px auto 0;
+  padding:28px;
+  border-radius:24px;
+}
+.notifications-friendly h2{
+  margin:6px 0 8px;
+  line-height:1.15;
+}
+.notifications-friendly>p{
+  max-width:620px;
+  margin:0 0 22px;
+}
+.notification-state{
+  align-items:center;
+  gap:18px;
+  padding:18px 20px;
+  border-radius:18px;
+  background:rgba(124,92,255,.055);
+  border:1px solid rgba(124,92,255,.10);
+}
+.notification-state>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+}
+.notification-state>div>b{
+  font-size:16px;
+}
+.notification-state .tag{
+  flex:0 0 auto;
+}
+@media(max-width:640px){
+  .notifications-friendly{
+    margin-top:10px;
+    padding:20px 16px;
+    border-radius:20px;
+  }
+  .notification-state{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .notification-state .primary{
+    width:100%;
+  }
+}
